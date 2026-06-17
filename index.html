@@ -103,10 +103,11 @@
             <option>May</option><option>Jun</option><option>Jul</option><option>Ago</option>
             <option>Sep</option><option>Oct</option><option>Nov</option><option>Dic</option>
           </select>
-          <input class="fi" id="av-año" type="number" value="2025" style="width:78px;padding:7px 9px">
+          <input class="fi" id="av-año" type="number" value="${new Date().getFullYear()}" style="width:78px;padding:7px 9px">
+          <select class="fi" id="av-dep" style="width:130px;padding:7px 9px">
+            <option value="">— Total cliente —</option>
+          </select>
           <input class="fi" id="av-imp" type="number" placeholder="Importe €" style="width:110px;padding:7px 9px">
-          <input class="fi" id="av-uni" type="number" placeholder="Unidades" style="width:90px;padding:7px 9px">
-          <input class="fi" id="av-desc" placeholder="Descripción" style="flex:1;padding:7px 9px">
           <button class="btn btn-primary btn-sm" onclick="addVentaManual()"><i class="ti ti-plus"></i>Añadir</button>
         </div>
       </div>
@@ -672,6 +673,12 @@ function openVP(id) {
   vpCliente = id;
   document.getElementById('vptitle').textContent = 'Ventas — ' + c.nombre;
   document.getElementById('vp-xl-prev').style.display='none';
+  // Populate departamento selector
+  const depSel = document.getElementById('av-dep');
+  if(depSel){
+    depSel.innerHTML = '<option value="">— Total cliente —</option>' +
+      (c.departamentos||[]).map(d=>`<option value="${d}">${d}</option>`).join('');
+  }
   document.getElementById('vpbg').classList.add('on');
   refreshVP();
 }
@@ -699,13 +706,25 @@ function refreshVP() {
   const empty = document.getElementById('vpempty');
   if (!rows.length) { tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
-  tbody.innerHTML = rows.map((v,i)=>`<tr>
-    <td>${v.año||2025}</td><td><strong>${v.mes}</strong></td>
-    <td style="color:var(--grn);font-weight:700">€${Math.round(v.importe).toLocaleString()}</td>
-    <td style="color:var(--mut)">${v.unidades||0}</td>
-    <td style="color:var(--mut);font-size:11px">${v.descripcion||''}</td>
-    <td><button class="bico d" onclick="delVenta(${i})"><i class="ti ti-trash"></i></button></td>
-  </tr>`).join('');
+  tbody.innerHTML = rows.map((v,i)=>{
+    const deps = (c.departamentos||[]);
+    const depRows = deps.length ? deps.map(d=>{
+      const vd = ((c.ventas_dep||{})[d]||{})[v.mes]||0;
+      return vd>0 ? `<tr style="background:#F7F9FD">
+        <td></td>
+        <td style="padding-left:24px;font-size:11px;color:var(--mut)"><i class="ti ti-corner-down-right" style="font-size:10px"></i> ${d}</td>
+        <td style="color:var(--acc);font-size:11px">€${Math.round(vd).toLocaleString()}</td>
+        <td colspan="3" style="font-size:10px;color:var(--mut)">${Math.round(vd/v.importe*100)}%</td>
+      </tr>` : '';
+    }).join('') : '';
+    return`<tr>
+      <td>${v.año||2025}</td><td><strong>${v.mes}</strong></td>
+      <td style="color:var(--grn);font-weight:700">€${Math.round(v.importe).toLocaleString()}</td>
+      <td style="color:var(--mut)">${v.unidades||0}</td>
+      <td style="color:var(--mut);font-size:11px">${v.descripcion||''}</td>
+      <td><button class="bico d" onclick="delVenta(${i})"><i class="ti ti-trash"></i></button></td>
+    </tr>${depRows}`;
+  }).join('');
 }
 
 async function addVentaManual() {
@@ -713,17 +732,32 @@ async function addVentaManual() {
   const imp = parseFloat(document.getElementById('av-imp').value)||0;
   if (!imp) { toast('Indica el importe'); return; }
   const mes = document.getElementById('av-mes').value;
-  const año = parseInt(document.getElementById('av-año').value)||2025;
-  const uni = parseFloat(document.getElementById('av-uni').value)||0;
-  const desc = document.getElementById('av-desc').value;
-  const idx = c.ventas.findIndex(v=>v.mes===mes&&v.año===año);
-  if (idx>=0) { c.ventas[idx].importe+=imp; c.ventas[idx].unidades+=uni; c.ventas[idx].descripcion=desc||c.ventas[idx].descripcion; }
-  else c.ventas.push({mes,año,importe:imp,unidades:uni,descripcion:desc});
+  const año = parseInt(document.getElementById('av-año').value)||new Date().getFullYear();
+  const dep = document.getElementById('av-dep')?.value||'';
+
+  if(dep){
+    // Guardar en departamento y recalcular total del cliente
+    if(!c.ventas_dep) c.ventas_dep={};
+    if(!c.ventas_dep[dep]) c.ventas_dep[dep]={};
+    c.ventas_dep[dep][mes] = imp; // reemplaza
+    // Recalcular total del cliente como suma de todos los dptos ese mes
+    const totalMes = (c.departamentos||[]).reduce((s,d)=>{
+      return s + ((c.ventas_dep[d]||{})[mes]||0);
+    },0);
+    const idx = c.ventas.findIndex(v=>v.mes===mes);
+    if(idx>=0){ c.ventas[idx].importe=totalMes||imp; }
+    else { c.ventas.push({mes,año,importe:totalMes||imp,unidades:0,descripcion:''}); }
+    toast(`✓ ${dep} — ${mes}: €${imp.toLocaleString()}`);
+  } else {
+    // Sin departamento — asignar al total del cliente directamente
+    const idx = c.ventas.findIndex(v=>v.mes===mes);
+    if(idx>=0){ c.ventas[idx].importe=imp; }
+    else { c.ventas.push({mes,año,importe:imp,unidades:0,descripcion:''}); }
+    toast(`✓ ${c.nombre} — ${mes}: €${imp.toLocaleString()}`);
+  }
+
   document.getElementById('av-imp').value='';
-  document.getElementById('av-uni').value='';
-  document.getElementById('av-desc').value='';
   await save(); refreshVP();
-  toast('✓ Venta añadida — '+c.nombre+' '+mes+' '+año);
 }
 
 async function delVenta(idx) {
