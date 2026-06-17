@@ -2452,6 +2452,12 @@ function handleBulkXL(ev){
       bulkData=[]; bulkUnmatched=[];
       const año = new Date().getFullYear();
       console.log('[BULK] hdrs:', hdrs);
+      console.log('[BULK] hdrs raw:', JSON.stringify(hdrs));
+      hdrs.forEach(h => {
+        const hn = nH(h).replace(/^imp\.?\s*/,'');
+        const match = MESES_FULL_ES.some(m => nH(m) === nH(h) || nH(m) === hn);
+        console.log('[BULK] hdr:', JSON.stringify(h), '-> nH:', nH(h), '-> clean:', hn, '-> match:', match);
+      });
       console.log('[BULK] monthCols:', monthCols);
       console.log('[BULK] isWideFormat:', isWideFormat);
       console.log('[BULK] rows count:', rows.length);
