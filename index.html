@@ -138,108 +138,77 @@
 //  Todos los usuarios comparten los mismos datos
 // ══════════════════════════════════════════════════════
 
-const JSONBIN_API = 'https://api.jsonbin.io/v3';
 // ┌─────────────────────────────────────────────────────────────────┐
-// │  CONFIGURACIÓN COMPARTIDA — INASA CRM                          │
-// │                                                                 │
-// │  Para que TODOS los trabajadores compartan los mismos datos:   │
-// │                                                                 │
-// │  1. Ve a https://jsonbin.io y crea una cuenta gratuita        │
-// │  2. En el menú, ve a "API Keys" → "Secret Key"                │
-// │  3. Copia tu clave (empieza por $2a$10$...)                   │
-// │  4. Pégala aquí, sustituyendo el texto INTRODUCE_TU_CLAVE_API │
-// │  5. Guarda el archivo y súbelo a OneDrive/SharePoint          │
-// │                                                                 │
-// │  Todos los trabajadores deben abrir ESTE MISMO archivo        │
+// │  CONFIGURACIÓN SUPABASE — INASA CRM                            │
 // └─────────────────────────────────────────────────────────────────┘
-const JSONBIN_KEY = '$2a$10$sSuML/ksTc5A.KYqqnyvIeVp2K8cbHI.uG6ETL0O1psUcVTnfT68C';
+const SB_URL = 'https://clwbpgjrlnjsezubemqp.supabase.co';
+const SB_KEY = 'sb_publishable_jI3hf3v6DHEzKogJ71HPVw_nGDeFjRA';
+const SB_TABLE = 'crm_storage';
+const SB_HEADERS = {
+  'Content-Type': 'application/json',
+  'apikey': SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+  'Prefer': 'resolution=merge-duplicates'
+};
 
-// localStorage guarda el mapa key→binId para no recrear bins
-const SHARED_BIN_MAP = {"inasa_crm_v3":"6a2a65d8f5f4af5e29dd4661","inasa_aliases_v2":"6a2a65daf5f4af5e29dd4674","inasa_presence_v2":"6a2a65dff5f4af5e29dd468d","inasa_last_activity_v1":"6a2a65e0f5f4af5e29dd468e","inasa_trabajadores_v2":"6a2a65f3f5f4af5e29dd46f2","inasa_oportunidades_v2":"6a2a8ddfda38895dfeac92fd","inasa_compromisos_v2":"6a2a8e26f5f4af5e29de1cba"};
-function getBinMap()  { try { const l=JSON.parse(localStorage.getItem('inasa_bin_map')||'{}'); return Object.assign({},SHARED_BIN_MAP,l); } catch(e){ return SHARED_BIN_MAP; } }
-function saveBinMap(m){ try { localStorage.setItem('inasa_bin_map', JSON.stringify(m)); } catch(e){} }
-function getBinId(key){ return getBinMap()[key] || null; }
-function setBinId(key, id){ const m=getBinMap(); m[key]=id; saveBinMap(m); }
-
-async function jbGet(key) {
-  const binId = getBinId(key);
-  if (!binId) return null;
+async function sbGet(key) {
   try {
-    const r = await fetch(`${JSONBIN_API}/b/${binId}/latest`, {
-      headers: { 'X-Master-Key': JSONBIN_KEY, 'X-Bin-Meta': 'false' }
-    });
+    const r = await fetch(
+      `${SB_URL}/rest/v1/${SB_TABLE}?key=eq.${encodeURIComponent(key)}&select=value`,
+      { headers: SB_HEADERS }
+    );
     if (!r.ok) return null;
     const data = await r.json();
-    // data es el record directamente (sin metadata porque X-Bin-Meta: false)
-    // Siempre devolvemos string para compatibilidad con el resto del código
-    const value = typeof data === 'string' ? data : JSON.stringify(data);
+    if (!data.length) return null;
+    return { key, value: data[0].value };
+  } catch(e) { console.error('sbGet error', e); return null; }
+}
+
+async function sbSet(key, value) {
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/${SB_TABLE}`,
+      {
+        method: 'POST',
+        headers: { ...SB_HEADERS, 'Prefer': 'resolution=merge-duplicates' },
+        body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
+      }
+    );
+    if (!r.ok) { console.error('sbSet error', r.status, await r.text()); return null; }
     return { key, value };
+  } catch(e) { console.error('sbSet error', e); return null; }
+}
+
+async function sbDelete(key) {
+  try {
+    await fetch(
+      `${SB_URL}/rest/v1/${SB_TABLE}?key=eq.${encodeURIComponent(key)}`,
+      { method: 'DELETE', headers: SB_HEADERS }
+    );
+    return { key, deleted: true };
   } catch(e) { return null; }
 }
 
-async function jbSet(key, value) {
-  // value llega como string JSON — lo parseamos para enviarlo como objeto a JSONBin
-  let obj;
-  try { obj = JSON.parse(value); } catch(e) { obj = value; }
-
-  let binId = getBinId(key);
+async function sbList(prefix) {
   try {
-    if (!binId) {
-      // Crear nuevo bin
-      const r = await fetch(`${JSONBIN_API}/b`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_KEY,
-          'X-Bin-Name': key,
-          'X-Bin-Private': 'false'
-        },
-        body: JSON.stringify(obj)
-      });
-      if (!r.ok) { console.error('jbSet create failed', r.status, await r.text()); return null; }
-      const j = await r.json();
-      setBinId(key, j.metadata.id);
-    } else {
-      // Actualizar bin existente
-      const r = await fetch(`${JSONBIN_API}/b/${binId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': JSONBIN_KEY
-        },
-        body: JSON.stringify(obj)
-      });
-      if (!r.ok) { console.error('jbSet update failed', r.status, await r.text()); return null; }
-    }
-    return { key, value };
-  } catch(e) { console.error('jbSet error', e); return null; }
+    const url = prefix
+      ? `${SB_URL}/rest/v1/${SB_TABLE}?key=like.${encodeURIComponent(prefix + '*')}&select=key`
+      : `${SB_URL}/rest/v1/${SB_TABLE}?select=key`;
+    const r = await fetch(url, { headers: SB_HEADERS });
+    if (!r.ok) return { keys: [] };
+    const data = await r.json();
+    return { keys: data.map(d => d.key) };
+  } catch(e) { return { keys: [] }; }
 }
 
-// Reemplaza window.storage SIEMPRE con JSONBin cuando la clave está configurada
-// Así funciona igual dentro de Claude.ai y en OneDrive
-const JSONBIN_CONFIGURED = !JSONBIN_KEY.includes('INTRODUCE_TU_CLAVE');
-
-if (JSONBIN_CONFIGURED) {
-  // Sobreescribimos window.storage (aunque exista en Claude.ai) para usar JSONBin compartido
-  window.storage = {
-    get:    async (key)         => jbGet(key),
-    set:    async (key, value)  => jbSet(key, value),
-    delete: async (key)         => { const m=getBinMap(); delete m[key]; saveBinMap(m); return { key, deleted:true }; },
-    list:   async (prefix)      => { const keys=Object.keys(getBinMap()).filter(k=>!prefix||k.startsWith(prefix)); return { keys }; }
-  };
-  console.log('✓ Storage: JSONBin.io (compartido)');
-} else if (!window.storage) {
-  // Fallback a localStorage solo si no hay clave JSONBin Y no estamos en Claude
-  window.storage = {
-    get:    async (key) => { try{ const v=localStorage.getItem(key); return v!=null?{key,value:v}:null; }catch(e){return null;} },
-    set:    async (key,value) => { try{ localStorage.setItem(key,value); return {key,value}; }catch(e){return null;} },
-    delete: async (key) => { try{ localStorage.removeItem(key); return {key,deleted:true}; }catch(e){return null;} },
-    list:   async (prefix) => { try{ const keys=Object.keys(localStorage).filter(k=>!prefix||k.startsWith(prefix)); return {keys}; }catch(e){return{keys:[]};} }
-  };
-  console.log('✓ Storage: localStorage (solo este navegador)');
-} else {
-  console.log('✓ Storage: Claude.ai (window.storage nativo)');
-}
+// Usar Supabase como storage compartido
+window.storage = {
+  get:    async (key)        => sbGet(key),
+  set:    async (key, value) => sbSet(key, value),
+  delete: async (key)        => sbDelete(key),
+  list:   async (prefix)     => sbList(prefix)
+};
+console.log('✓ Storage: Supabase (compartido)');
 
 // ══════════════════════════════════════════════════════
 //  SHARED STORAGE KEYS  (window.storage = shared across all users)
@@ -2730,17 +2699,9 @@ function renderPromociones(){
 
     <!-- Column picker toggle -->
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-sm" onclick="togglePromoCols()"><i class="ti ti-settings"></i>Columnas</button>
+      <button class="btn btn-sm" onclick="togglePromoVista()"><i class="ti ti-layout-list"></i>Vista tabla</button>
     </div>
-    <div id="promo-col-picker" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:10px;padding:12px 16px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Columnas visibles</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${[['cliente','Cliente'],['mes','Mes'],['quincena','Q'],['ean','EAN'],['producto','Producto'],['marca','Marca'],['tematica','Temática'],['periodo_promo','Período'],['promo_realizada','Realizada'],['fecha_envio','F. Envío'],['fecha_confirmacion','F. Confirm.'],['redencion','Redención'],['dcto_factura','Dcto. Factura'],['com_comercial','Com. Comercial']].map(([k,l])=>
-          `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;font-weight:600">
-            <input type="checkbox" id="pc-${k}" ${promoCols[k]!==false?'checked':''} onchange="promoCols['${k}']=this.checked;applyPromoFilter()">
-            ${l}</label>`).join('')}
-      </div>
-    </div>
+
     <!-- Filters -->
     <div class="promo-filters">
       <select class="fi" id="pf-cliente" onchange="applyPromoFilter()" style="min-width:120px">
@@ -2756,34 +2717,47 @@ function renderPromociones(){
         <option value="si">✓ Realizadas</option>
         <option value="no">✗ No realizadas</option>
       </select>
-      <input class="fi" id="pf-buscar" placeholder="🔍 Buscar producto, marca, EAN, temática..." oninput="applyPromoFilter()" style="min-width:260px">
+      <input class="fi" id="pf-buscar" placeholder="🔍 Buscar producto, marca, EAN..." oninput="applyPromoFilter()" style="min-width:220px">
       <button class="btn btn-sm" onclick="resetPromoFilters()"><i class="ti ti-x"></i>Limpiar</button>
       <span id="promo-count" style="font-size:12px;color:var(--mut);margin-left:4px"></span>
     </div>
 
-    <!-- Table -->
-    <div class="card"><div class="tw" style="overflow-x:scroll">
-      <table>
-        <thead><tr id="promo-thead">
-          <th>Cliente</th><th>Mes</th><th>Q</th><th>EAN</th>
-          <th>Producto</th><th>Marca</th><th>Temática</th><th>Período</th>
-          <th>Realizada</th>
-          <th>Fecha Envío</th><th>Fecha Confirm.</th>
-          <th>Redención</th><th>Dcto. Factura</th><th>Com. Comercial</th><th></th>
-        </tr></thead>
-        <tbody id="promo-tbody"></tbody>
-      </table>
-      <div id="promo-empty" class="nodata" style="display:none">No hay promociones con los filtros seleccionados</div>
-    </div></div>`;
+    <!-- Vista agrupada (default) -->
+    <div id="promo-agrupada"></div>
+
+    <!-- Vista tabla (alternativa) -->
+    <div id="promo-tabla" style="display:none">
+      <div class="card"><div class="tw" style="overflow-x:scroll">
+        <table>
+          <thead><tr>
+            <th>Cliente</th><th>Mes</th><th>Q</th><th>EAN</th>
+            <th>Producto</th><th>Marca</th><th>Temática</th><th>Período</th>
+            <th>Realizada</th><th>Fecha Envío</th><th>Fecha Confirm.</th>
+            <th>Redención</th><th>Dcto. Factura</th><th>Com. Comercial</th><th></th>
+          </tr></thead>
+          <tbody id="promo-tbody"></tbody>
+        </table>
+        <div id="promo-empty" class="nodata" style="display:none">No hay promociones con los filtros seleccionados</div>
+      </div></div>
+    </div>`;
 
   applyPromoFilter();
   updatePromoBadge();
 }
 
+let promoVistaTabla = false;
+function togglePromoVista(){
+  promoVistaTabla = !promoVistaTabla;
+  const btnTxt = promoVistaTabla ? '<i class="ti ti-layout-list"></i>Vista agrupada' : '<i class="ti ti-layout-list"></i>Vista tabla';
+  document.querySelector('[onclick="togglePromoVista()"]').innerHTML = btnTxt;
+  document.getElementById('promo-agrupada').style.display = promoVistaTabla ? 'none' : '';
+  document.getElementById('promo-tabla').style.display    = promoVistaTabla ? '' : 'none';
+}
+
 function applyPromoFilter(){
-  const cli=(document.getElementById('pf-cliente')?.value||'').trim();
-  const mes=(document.getElementById('pf-mes')?.value||'').trim();
-  const real=(document.getElementById('pf-realizada')?.value||'').trim();
+  const cli   =(document.getElementById('pf-cliente')?.value||'').trim();
+  const mes   =(document.getElementById('pf-mes')?.value||'').trim();
+  const real  =(document.getElementById('pf-realizada')?.value||'').trim();
   const buscar=(document.getElementById('pf-buscar')?.value||'').toLowerCase().trim();
 
   let list=DB_PROMOS;
@@ -2801,6 +2775,7 @@ function applyPromoFilter(){
   const cnt=document.getElementById('promo-count');
   if(cnt) cnt.textContent=list.length!==DB_PROMOS.length?`${list.length} de ${DB_PROMOS.length}`:`${DB_PROMOS.length} promociones`;
 
+  renderPromoAgrupada(list);
   renderPromoTable(list);
 }
 
@@ -2808,6 +2783,150 @@ function resetPromoFilters(){
   ['pf-cliente','pf-mes','pf-realizada'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const b=document.getElementById('pf-buscar');if(b)b.value='';
   applyPromoFilter();
+}
+
+function pgId(s){ return 'pg_'+s.replace(/[^a-zA-Z0-9]/g,'_'); }
+
+function renderPromoAgrupada(list){
+  const el=document.getElementById('promo-agrupada'); if(!el)return;
+  if(!list.length){
+    el.innerHTML='<div class="nodata">No hay promociones con los filtros seleccionados</div>';
+    return;
+  }
+
+  // Agrupar: mes → cliente → marca (proveedor)
+  const byMes={};
+  list.forEach(p=>{
+    const m=p.mes||'SIN MES';
+    const c=p.cliente||'SIN CLIENTE';
+    const pr=p.marca||'SIN PROVEEDOR';
+    if(!byMes[m]) byMes[m]={};
+    if(!byMes[m][c]) byMes[m][c]={};
+    if(!byMes[m][c][pr]) byMes[m][c][pr]=[];
+    byMes[m][c][pr].push(p);
+  });
+
+  // Ordenar meses según MESES_ORDER
+  const mesesOrdenados=Object.keys(byMes).sort((a,b)=>MESES_ORDER.indexOf(a)-MESES_ORDER.indexOf(b));
+
+  const tagReal=r=>r==='si'
+    ?'<span class="promo-tag pt-si"><span class="dot"></span>SÍ</span>'
+    :r==='no'
+    ?'<span class="promo-tag pt-no"><span class="dot"></span>NO</span>'
+    :'<span style="color:var(--mut);font-size:11px">—</span>';
+
+  el.innerHTML = mesesOrdenados.map(mes=>{
+    const clientes=Object.keys(byMes[mes]).sort();
+    const totalMes=clientes.reduce((s,c)=>s+Object.values(byMes[mes][c]).reduce((s2,refs)=>s2+refs.length,0),0);
+    const midMes=pgId(mes);
+
+    const cliHtml=clientes.map(cli=>{
+      const provs=Object.keys(byMes[mes][cli]).sort();
+      const totalCli=provs.reduce((s,pr)=>s+byMes[mes][cli][pr].length,0);
+      const midCli=pgId(mes+'_'+cli);
+
+      const provHtml=provs.map(prov=>{
+        const refs=byMes[mes][cli][prov];
+        const midProv=pgId(mes+'_'+cli+'_'+prov);
+        // Info del proveedor: tomar del primer registro
+        const p0=refs[0];
+        const tematica=p0.tematica||'—';
+        const periodo=p0.periodo_promo||'—';
+        // Redención media si hay valores
+        const reds=refs.map(r=>parseFloat(r.redencion)).filter(n=>!isNaN(n));
+        const redStr=reds.length?reds.reduce((a,b)=>a+b,0)/reds.length:'';
+        // Dcto factura: mostrar del primero (suelen ser iguales por proveedor/temática)
+        const dcto=p0.dcto_factura||'';
+        // Promo realizada: contar si/no
+        const si=refs.filter(r=>r.promo_realizada==='si').length;
+        const no=refs.filter(r=>r.promo_realizada==='no').length;
+        const ndCount=refs.length-si-no;
+
+        const refsHtml=refs.map(r=>{
+          const idx=DB_PROMOS.indexOf(r);
+          return`<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:0.5px solid var(--brd);cursor:pointer" onclick="openPromoDetail(${idx})">
+            <span style="font-size:10px;color:var(--mut);font-family:monospace;min-width:100px">${r.ean||'—'}</span>
+            <span style="font-size:11px;color:var(--txt);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.producto||''}">${r.producto||'—'}</span>
+            <span style="font-size:11px;color:var(--mut)">${r.quincena||''}</span>
+            ${tagReal(r.promo_realizada)}
+            <span style="font-size:11px;color:var(--grn);font-weight:600;min-width:40px;text-align:right">${fmtRed(r.redencion)}</span>
+            <button class="bico e" onclick="event.stopPropagation();editPromo(${idx})" title="Editar" style="flex-shrink:0"><i class="ti ti-pencil"></i></button>
+          </div>`;
+        }).join('');
+
+        return`<div style="margin-left:14px;border-left:2px solid var(--brd);padding-left:10px;margin-bottom:4px">
+          <div style="background:var(--sur);border:0.5px solid var(--brd);border-radius:10px;overflow:hidden;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer" onclick="pgToggle('${midProv}')">
+              <i class="ti ti-tag" style="font-size:12px;color:var(--mut)"></i>
+              <span style="font-size:12px;font-weight:600;color:var(--txt);flex:1">${prov}</span>
+              <span style="font-size:10px;background:var(--sur);border:0.5px solid var(--brd);padding:2px 8px;border-radius:20px;color:var(--mut)">${refs.length} refs</span>
+              <i class="ti ti-chevron-up" id="ch_${midProv}" style="font-size:13px;color:var(--mut)"></i>
+            </div>
+            <div id="${midProv}" style="border-top:0.5px solid var(--brd)">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:8px 12px;background:var(--bg)">
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Período</span>
+                  <span style="font-size:11px;font-weight:600;color:var(--txt)">${periodo}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Temática</span>
+                  <span style="font-size:11px;font-weight:600;color:var(--acc)">${tematica}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Realizadas</span>
+                  <span style="display:flex;gap:4px;align-items:center">
+                    ${si?`<span style="font-size:11px;font-weight:600;color:var(--grn)">${si} SÍ</span>`:''}
+                    ${no?`<span style="font-size:11px;font-weight:600;color:var(--red)">${no} NO</span>`:''}
+                    ${ndCount?`<span style="font-size:11px;color:var(--mut)">${ndCount} —</span>`:''}
+                  </span>
+                </div>
+              </div>
+              ${redStr||dcto?`<div style="display:grid;grid-template-columns:${redStr&&dcto?'1fr 2fr':'1fr'};gap:6px;padding:0 12px 8px;background:var(--bg)">
+                ${redStr?`<div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Redención media</span>
+                  <span style="font-size:11px;font-weight:600;color:var(--grn)">${fmtRed(redStr)}</span>
+                </div>`:''}
+                ${dcto?`<div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Dcto. Factura</span>
+                  <span style="font-size:11px;color:var(--txt)">${dcto}</span>
+                </div>`:''}
+              </div>`:''}
+              ${refsHtml}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      return`<div style="margin-left:16px;border-left:2px solid var(--brd);padding-left:10px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--sur);border:0.5px solid var(--brd);border-radius:10px;cursor:pointer;margin-bottom:4px" onclick="pgToggle('${midCli}')">
+          <i class="ti ti-building-store" style="font-size:14px;color:var(--mut)"></i>
+          <span style="font-size:13px;font-weight:700;color:var(--txt);flex:1">${cli}</span>
+          <span style="font-size:11px;background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:20px;font-weight:600">${provs.length} prov · ${totalCli} refs</span>
+          <i class="ti ti-chevron-up" id="ch_${midCli}" style="font-size:13px;color:var(--mut)"></i>
+        </div>
+        <div id="${midCli}">${provHtml}</div>
+      </div>`;
+    }).join('');
+
+    return`<div style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--sur);border:0.5px solid var(--brd);border-radius:12px;cursor:pointer;margin-bottom:6px" onclick="pgToggle('${midMes}')">
+        <i class="ti ti-calendar-month" style="font-size:16px;color:var(--mut)"></i>
+        <span style="font-size:14px;font-weight:700;color:var(--txt);flex:1">${mes}</span>
+        <span style="font-size:11px;background:var(--sur);border:0.5px solid var(--brd);padding:2px 8px;border-radius:20px;color:var(--mut)">${clientes.length} clientes · ${totalMes} refs</span>
+        <i class="ti ti-chevron-up" id="ch_${midMes}" style="font-size:14px;color:var(--mut)"></i>
+      </div>
+      <div id="${midMes}">${cliHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function pgToggle(id){
+  const el=document.getElementById(id);
+  const ch=document.getElementById('ch_'+id);
+  if(!el)return;
+  const hidden=el.style.display==='none';
+  el.style.display=hidden?'':'none';
+  if(ch){ ch.style.transform=hidden?'':'rotate(180deg)'; }
 }
 
 function hl2(t,q){if(!q||!t)return t||'';return String(t).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark style="background:#FEF3C7;border-radius:2px">$1</mark>');}
@@ -2819,7 +2938,6 @@ function renderPromoTable(list){
   if(!tbody)return;
   if(!list.length){tbody.innerHTML='';if(empty)empty.style.display='block';return;}
   if(empty)empty.style.display='none';
-  tbody.innerHTML=list.map((p,i)=>{
     const idx=DB_PROMOS.indexOf(p);
     return`<tr style="cursor:pointer" onclick="openPromoDetail(${idx})">
       <td><strong>${hl2(p.cliente,buscar)}</strong></td>
