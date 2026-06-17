@@ -2823,39 +2823,54 @@ function confirmBulkDpto(){
 }
 
 async function importBulk(){
+  if(!bulkData.length) return;
   const btn=document.getElementById('bulk-import-btn');
   btn.innerHTML='<span class="spin"></span> Importando...'; btn.disabled=true;
 
-  let added=0, updated=0;
+  const año = new Date().getFullYear();
+
+  // Agrupar bulkData por cliente
+  const porCliente = {};
   bulkData.forEach(r=>{
-    const c=DB.clientes.find(x=>x.id===r.cliId); if(!c) return;
-
-    // Guardar en ventas totales del cliente
-    const idx=c.ventas.findIndex(v=>v.mes===r.mes&&(v.año||2025)===r.año);
-    if(idx>=0){
-      c.ventas[idx].importe+=(r.importe||0);
-      c.ventas[idx].unidades+=(r.unidades||0);
-      if(r.descripcion&&!c.ventas[idx].descripcion)c.ventas[idx].descripcion=r.descripcion;
-      updated++;
-    } else {
-      c.ventas.push({mes:r.mes,año:r.año,importe:r.importe,unidades:r.unidades||0,
-                     producto:r.producto||'',descripcion:r.descripcion||''});
-      added++;
-    }
-
-    // Guardar en ventas_dep si hay departamento reconocido
+    if(!r.cliId) return;
+    if(!porCliente[r.cliId]) porCliente[r.cliId]={cliId:r.cliId, porMes:{}, porDepMes:{}};
+    const g = porCliente[r.cliId];
+    // Acumular total por mes (suma de todos los dptos)
+    g.porMes[r.mes] = (g.porMes[r.mes]||0) + (r.importe||0);
+    // Acumular por dep+mes
     if(r.departamento){
       const dep = r.departamento.trim();
+      if(!g.porDepMes[dep]) g.porDepMes[dep]={};
+      g.porDepMes[dep][r.mes] = (g.porDepMes[dep][r.mes]||0) + (r.importe||0);
+    }
+  });
+
+  Object.values(porCliente).forEach(({cliId, porMes, porDepMes})=>{
+    const c = DB.clientes.find(x=>x.id===cliId); if(!c) return;
+
+    // REEMPLAZAR ventas totales por mes (elimina cualquier año existente para ese mes)
+    Object.entries(porMes).forEach(([mes, importe])=>{
+      c.ventas = c.ventas.filter(v=>v.mes!==mes); // elimina TODOS los registros de ese mes sin importar el año
+      c.ventas.push({mes, año, importe, unidades:0, producto:'', descripcion:''});
+    });
+
+    // REEMPLAZAR ventas_dep por dep+mes
+    if(Object.keys(porDepMes).length){
       if(!c.ventas_dep) c.ventas_dep={};
-      if(!c.ventas_dep[dep]) c.ventas_dep[dep]={};
-      c.ventas_dep[dep][r.mes]=(c.ventas_dep[dep][r.mes]||0)+(r.importe||0);
+      Object.entries(porDepMes).forEach(([dep, meses])=>{
+        if(!c.ventas_dep[dep]) c.ventas_dep[dep]={};
+        Object.entries(meses).forEach(([mes, importe])=>{
+          c.ventas_dep[dep][mes] = importe;
+        });
+      });
     }
   });
 
   await save();
   closeBulk();
-  const depCount=bulkData.filter(r=>r.departamento).length;
-  toast(`✓ ${bulkData.length} registros importados${depCount?` · ${depCount} con departamento`:''}`);
+  const clientes = Object.keys(porCliente).length;
+  const depCount = bulkData.filter(r=>r.departamento).length;
+  toast(`✓ Ventas importadas — ${clientes} cliente${clientes>1?'s':''}${depCount?' · con departamentos':''}`);
   renderVentas();
   btn.innerHTML='<i class="ti ti-download"></i><span>Importar</span>'; btn.disabled=false;
 }
