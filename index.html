@@ -577,7 +577,7 @@ function renderCliGrid(list) {
         </div>
       </div>
       <div class="cbody">
-        <div class="cst"><span class="csl"><i class="ti ti-cash"></i> Ventas acumuladas</span><span class="csv">€${Math.round(tot).toLocaleString()}</span></div>
+        <div class="cst"><span class="csl"><i class="ti ti-cash"></i> Ventas acumuladas</span><span class="csv">€${parseFloat(tot).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
         ${(c.departamentos||[]).length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
           ${(c.departamentos).map(d=>`<span style="font-size:10px;background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:10px;font-weight:600">${d}</span>`).join('')}
         </div>` : ''}
@@ -867,7 +867,7 @@ function renderVentas(){
         }).join(''):`<tr class="vddep vddep-${c.id}" style="display:none;background:#F7F9FD"><td colspan="4" style="padding:4px 13px 4px 32px;font-size:11px;color:var(--mut)">Sin departamentos — <a href="#" onclick="event.preventDefault();nav('clientes')" style="color:var(--acc)">añadir en Clientes</a></td></tr>`;
         return`<tr onclick="vdToggle(${c.id})" style="cursor:pointer">
           <td><strong style="color:var(--acc)">${c.nombre}</strong> <i class="ti ti-chevron-down" id="vd_ch_${c.id}" style="font-size:10px;color:var(--mut);transition:.2s;margin-left:4px"></i></td>
-          <td style="text-align:right;font-weight:700;color:${v>0?'var(--grn)':'var(--mut)'}">${v>0?'€'+Math.round(v).toLocaleString():'—'}</td>
+          <td style="text-align:right;font-weight:700;color:${v>0?'var(--grn)':'var(--mut)'}">${v>0?'€'+parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>
           <td style="text-align:right">${v>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><div style="width:80px;height:6px;background:#EBF0F7;border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--grn);border-radius:3px"></div></div><span style="font-size:11px;color:var(--mut);width:28px;text-align:right">${pct}%</span></div>`:'—'}</td>
           <td style="text-align:right"><button onclick="event.stopPropagation();editImporteMes(${c.id},'${selMes}')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--brd);background:var(--sur);cursor:pointer;font-size:11px;color:var(--mut)"><i class="ti ti-pencil"></i></button></td>
         </tr>${depRows}`;
@@ -893,16 +893,16 @@ function renderVentas(){
           const pctD=tot>0?Math.round(totD/tot*100):0;
           return`<tr class="vddep vddep-a-${c.id}" style="display:none;background:#F7F9FD">
             <td style="padding:4px 13px 4px 32px;font-size:11px;color:var(--mut)"><i class="ti ti-corner-down-right" style="font-size:10px;margin-right:4px"></i>${d}</td>
-            ${MESES.map(m=>{const imp=vd[m]||0;return`<td style="text-align:right;font-size:10px;color:var(--mut)">${imp>0?'€'+Math.round(imp).toLocaleString():'—'}</td>`;}).join('')}
+            ${MESES.map(m=>{const imp=vd[m]||0;return`<td style="text-align:right;font-size:10px;color:var(--mut)">${imp>0?'€'+parseFloat(imp).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>`;}).join('')}
             <td style="text-align:right"><div style="display:flex;align-items:center;justify-content:flex-end;gap:6px"><div style="width:65px;height:5px;background:#EBF0F7;border-radius:3px;overflow:hidden"><div style="height:100%;width:${pctD}%;background:var(--acc);border-radius:3px"></div></div><span style="font-size:10px;color:var(--mut);min-width:30px;text-align:right">${pctD}%</span></div></td>
             <td style="text-align:right;font-size:11px;color:var(--mut)">${totD>0?'€'+Math.round(totD).toLocaleString():'—'}</td>
           </tr>`;
         }).join(''):`<tr class="vddep vddep-a-${c.id}" style="display:none;background:#F7F9FD"><td colspan="${MESES.length+3}" style="padding:4px 13px 4px 32px;font-size:11px;color:var(--mut)">Sin departamentos definidos</td></tr>`;
         return`<tr onclick="vdToggle(${c.id},'a')" style="cursor:pointer">
           <td><strong style="color:var(--acc)">${c.nombre}</strong> <i class="ti ti-chevron-down" id="vd_ch_a_${c.id}" style="font-size:10px;color:var(--mut);transition:.2s;margin-left:4px"></i></td>
-          ${MESES.map(m=>{const imp=byClient[c.nombre][m]||0;return`<td style="text-align:right;color:var(--mut);font-size:11.5px" onclick="event.stopPropagation();editImporteMes(${c.id},'${m}')" title="Editar ${m}">${imp>0?'€'+Math.round(imp).toLocaleString():'—'}</td>`;}).join('')}
+          ${MESES.map(m=>{const imp=byClient[c.nombre][m]||0;return`<td style="text-align:right;color:var(--mut);font-size:11.5px" onclick="event.stopPropagation();editImporteMes(${c.id},'${m}')" title="Editar ${m}">${imp>0?'€'+parseFloat(imp).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>`;}).join('')}
           <td style="text-align:right;padding-right:10px">${tot>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:7px"><div style="width:65px;height:7px;background:#EBF0F7;border-radius:4px;overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct}%;background:var(--grn);border-radius:4px"></div></div><span style="font-size:11px;color:var(--mut);min-width:36px;text-align:right;font-weight:600">${pctExact}%</span></div>`:'—'}</td>
-          <td style="text-align:right;font-weight:700;color:var(--grn)">€${Math.round(tot).toLocaleString()}</td>
+          <td style="text-align:right;font-weight:700;color:var(--grn)">€${parseFloat(tot).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
         </tr>${depRows}`;
       }).join('')}
       <tfoot><tr style="background:#EEF5EC">
@@ -2159,14 +2159,24 @@ function handleXL(ev){
     reader.onload=function(e){
       try{
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
-        if(!rows.length){prev.innerHTML='<div style="color:var(--red);font-size:12px">⚠ Archivo vacío</div>';return;}
-        const hdrs=Object.keys(rows[0]);
-        xlData=rows.map(r=>({
+        // Read with header:1 to get raw arrays, find the real header row
+        const rawRows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        // Find header row: first row that contains CLIENTE or NOMBRE
+        let hdrIdx=0;
+        for(let i=0;i<Math.min(10,rawRows.length);i++){
+          const r=rawRows[i].map(c=>String(c||'').toUpperCase().trim());
+          if(r.some(c=>c==='CLIENTE'||c==='NOMBRE'||c==='EMAIL')){hdrIdx=i;break;}
+        }
+        const hdrs=rawRows[hdrIdx].map(c=>String(c||'').trim());
+        const dataRows=rawRows.slice(hdrIdx+1);
+        if(!dataRows.length){prev.innerHTML='<div style="color:var(--red);font-size:12px">⚠ Archivo vacío</div>';return;}
+        // Build row objects
+        const mkRow=arr=>{const o={};hdrs.forEach((h,i)=>{if(h)o[h]=arr[i]??'';});return o;};
+        xlData=dataRows.map(arr=>mkRow(arr)).map(r=>({
           cliente:gC(r,hdrs,['CLIENTE','EMPRESA']),departamento:gC(r,hdrs,['DEPARTAMENTO','DEPTO']),
           cargo:gC(r,hdrs,['PUESTO','CARGO']),nombre:gC(r,hdrs,['NOMBRE','NAME']),
-          email:gC(r,hdrs,['EMAIL','CORREO']),tel:gC(r,hdrs,['TELEFONO','TEL']),
-          direccion:gC(r,hdrs,['DIRECCION','ADDRESS']),
+          email:gC(r,hdrs,['EMAIL','CORREO']),tel:gC(r,hdrs,['TELEFONO','TEL','TELÉFONO']),
+          direccion:gC(r,hdrs,['DIRECCION','DIRECCIÓN','ADDRESS']),
           obs:[gC(r,hdrs,['OBS']),gC(r,hdrs,['OBS2'])].filter(Boolean).join(' | '),
           estado:'Activo',_id:0
         })).filter(c=>c.nombre||c.cliente);
@@ -2278,7 +2288,7 @@ function renderMarcasTable(list){
       </td>
       ${MESES.map(mes=>{
         const v=m.ventas[mes]||0;
-        return`<td style="text-align:right;color:var(--mut);font-size:11.5px;cursor:pointer" onclick="editMarcaMes(${m.id},'${mes}')" title="Editar ${mes}">${v>0?'€'+Math.round(v).toLocaleString():'—'}</td>`;
+        return`<td style="text-align:right;color:var(--mut);font-size:11.5px;cursor:pointer" onclick="editMarcaMes(${m.id},'${mes}')" title="Editar ${mes}">${v>0?'€'+parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>`;
       }).join('')}
       <td style="text-align:right;font-weight:700;color:${tot>0?'var(--grn)':'var(--mut)'}">${tot>0?'€'+Math.round(tot).toLocaleString():'—'}</td>
       <td style="text-align:right;padding-right:8px">
@@ -2300,7 +2310,7 @@ function renderMarcasTable(list){
   const listTotal=list.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
   tfoot.innerHTML=`<tr style="background:#EEF5EC">
     <td style="font-weight:700">TOTAL (${list.length} marcas)</td>
-    ${MESES.map(mes=>{const v=mesTotal(mes);return`<td style="text-align:right;font-weight:700;font-size:11.5px">${v>0?'€'+Math.round(v).toLocaleString():'—'}</td>`;}).join('')}
+    ${MESES.map(mes=>{const v=mesTotal(mes);return`<td style="text-align:right;font-weight:700;font-size:11.5px">${v>0?'€'+parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>`;}).join('')}
     <td style="text-align:right;font-weight:800;color:var(--grn)">€${Math.round(listTotal).toLocaleString()}</td>
     <td colspan="2"></td>
   </tr>`;
