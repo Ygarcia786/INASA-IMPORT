@@ -103,11 +103,11 @@
             <option>May</option><option>Jun</option><option>Jul</option><option>Ago</option>
             <option>Sep</option><option>Oct</option><option>Nov</option><option>Dic</option>
           </select>
-          <input class="fi" id="av-año" type="number" value="${new Date().getFullYear()}" style="width:78px;padding:7px 9px">
+          <input class="fi" id="av-año" type="number" value="2026" style="width:78px;padding:7px 9px">
           <select class="fi" id="av-dep" style="width:130px;padding:7px 9px">
             <option value="">— Total cliente —</option>
           </select>
-          <input class="fi" id="av-imp" type="number" placeholder="Importe €" style="width:110px;padding:7px 9px">
+          <input class="fi" id="av-imp" type="number" placeholder="0,00" step="0.01" min="0" style="width:130px;padding:7px 9px">
           <button class="btn btn-primary btn-sm" onclick="addVentaManual()"><i class="ti ti-plus"></i>Añadir</button>
         </div>
       </div>
@@ -689,11 +689,11 @@ function refreshVP() {
   const ventas = c.ventas.filter(v=>v.importe>0);
   const total = ventas.reduce((a,v)=>a+(v.importe||0),0);
   const best = ventas.length ? [...ventas].sort((a,b)=>b.importe-a.importe)[0] : null;
-  const avg = ventas.length ? Math.round(total/ventas.length) : 0;
-  document.getElementById('vpktotal').textContent = '€'+Math.round(total).toLocaleString();
+  const avg = ventas.length ? total/ventas.length : 0;
+  document.getElementById('vpktotal').textContent = '€'+total.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
   document.getElementById('vpkcount').textContent = ventas.length;
   document.getElementById('vpkbest').textContent = best ? best.mes+' €'+(best.importe/1000).toFixed(1)+'k' : '—';
-  document.getElementById('vpkavg').textContent = '€'+avg.toLocaleString();
+  document.getElementById('vpkavg').textContent = '€'+avg.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
   // bar chart
   const maxV = Math.max(...c.ventas.map(v=>v.importe), 1);
   document.getElementById('vpbar').innerHTML = c.ventas.map(v=>`<div class="mbarw">
@@ -716,13 +716,13 @@ function refreshVP() {
       return `<tr style="background:#F7F9FD">
         <td></td>
         <td style="padding-left:24px;font-size:11px;color:var(--mut)"><i class="ti ti-corner-down-right" style="font-size:10px"></i> ${d}</td>
-        <td style="color:var(--acc);font-size:11px">€${Math.round(vd).toLocaleString()}</td>
+        <td style="color:var(--acc);font-size:11px">€${vd.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
         <td colspan="3" style="font-size:10px;color:var(--mut)">${pct}%</td>
       </tr>`;
     }).join('') : '';
     return`<tr>
-      <td>${v.año||2025}</td><td><strong>${v.mes}</strong></td>
-      <td style="color:var(--grn);font-weight:700">€${Math.round(v.importe).toLocaleString()}</td>
+      <td>${v.año||2026}</td><td><strong>${v.mes}</strong></td>
+      <td style="color:var(--grn);font-weight:700">€${v.importe.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
       <td style="color:var(--mut)">${v.unidades||0}</td>
       <td style="color:var(--mut);font-size:11px">${v.descripcion||''}</td>
       <td><button class="bico d" onclick="delVenta(${i})"><i class="ti ti-trash"></i></button></td>
@@ -1418,14 +1418,14 @@ function renderTrabajadores(){
 
     ${(()=>{
       // Panel de solicitudes pendientes — visible para jefes de dep o admin
-      const currentUser = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
-      const isJefe = currentUser?.es_jefe_dep || currentUser?.name==='Administrador';
+      const loggedUser = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
+      const isJefe = loggedUser?.es_jefe_dep || currentUser?.name==='Administrador';
       const pendientes = [];
       DB_TRABAJADORES.forEach(t=>{
         (t.vacaciones||[]).forEach((v,i)=>{
           if(v.estado==='pendiente'){
             // Jefe ve solo su depto, admin ve todos
-            const puedeVer = currentUser?.name==='Administrador' || (isJefe && currentUser.departamento===t.departamento);
+            const puedeVer = currentUser?.name==='Administrador' || (isJefe && loggedUser?.departamento===t.departamento);
             if(puedeVer) pendientes.push({t,v,i});
           }
         });
@@ -1693,8 +1693,8 @@ async function deleteTrabajador(id){
   await saveTrabajadores();renderTrabajadores();writeActivity('trabajadores');toast('✓ Eliminado');
 }
 function openVacModal(){
-  const currentUser = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
-  const isJefe = currentUser?.es_jefe_dep;
+  const loggedUser2 = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
+  const isJefe = loggedUser2?.es_jefe_dep;
   document.getElementById('mttl').innerHTML='<i class="ti ti-sun-wind"></i>Solicitar Vacaciones / Ausencia';
   document.getElementById('mbody').innerHTML=`
     <div class="fg"><div class="fl">Trabajador *</div>
@@ -1729,8 +1729,8 @@ async function saveVacaciones(){
   if(!t){toast('⚠ Selecciona un trabajador');return;}
   if(!t.vacaciones) t.vacaciones=[];
   // estado: si el usuario actual es jefe de dep del trabajador → aprobada directamente
-  const currentUser = DB_TRABAJADORES.find(x=>x.nombre===currentUser?.name);
-  const autoApprove = currentUser?.es_jefe_dep && (currentUser.departamento===t.departamento || currentUser.jefe_de==='todos');
+  const loggedUser3 = DB_TRABAJADORES.find(x=>x.nombre===currentUser?.name);
+  const autoApprove = loggedUser3?.es_jefe_dep && (loggedUser3?.departamento===t.departamento || loggedUser3?.jefe_de==='todos');
   t.vacaciones.push({desde,hasta,tipo,notas,estado:autoApprove?'aprobada':'pendiente',solicitadoPor:currentUser?.name||'admin',fecha_solicitud:new Date().toISOString().slice(0,10)});
   await saveTrabajadores();
   toast(autoApprove?`✓ ${tipo} aprobada`:`✓ Solicitud enviada — pendiente de validación`);
