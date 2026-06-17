@@ -23,6 +23,7 @@
   <div class="tabs">
     <button class="tab on" onclick="nav('dashboard',this)"><i class="ti ti-layout-dashboard"></i>Dashboard</button>
     <button class="tab" onclick="nav('clientes',this)"><i class="ti ti-building-store"></i>Clientes</button>
+    <button class="tab" onclick="nav('marcas',this)"><i class="ti ti-rosette"></i>Marcas</button>
     <button class="tab" onclick="nav('ventas',this)"><i class="ti ti-chart-bar"></i>Ventas</button>
     <button class="tab" onclick="nav('directorio',this)"><i class="ti ti-users"></i>Directorio</button>
     <button class="tab" onclick="nav('pipeline',this)"><i class="ti ti-git-fork"></i>Pipeline</button>
@@ -219,6 +220,7 @@ const PROMOS_KEY = 'inasa_promos_v2';
 const OPORT_KEY  = 'inasa_oportunidades_v2';
 const COMP_KEY   = 'inasa_compromisos_v2';
 const TRAB_KEY   = 'inasa_trabajadores_v2';
+const MARCAS_KEY = 'inasa_marcas_v1';
 
 // Local-only prefs (not shared)
 const LPREF_USER_ID   = 'inasa_my_user_id';
@@ -379,7 +381,7 @@ async function nav(id, el) {
   renderView(id);
 }
 function renderView(id){
-  const renders={dashboard:renderDashboard,clientes:renderClientes,ventas:renderVentas,directorio:renderDirectorio,pipeline:renderPipeline,oportunidades:renderOportunidades,tareas:renderTareas,seguimiento:renderSeguimiento,promociones:renderPromociones,compromisos:renderCompromisos,trabajadores:renderTrabajadores};
+  const renders={dashboard:renderDashboard,clientes:renderClientes,marcas:renderMarcas,ventas:renderVentas,directorio:renderDirectorio,pipeline:renderPipeline,oportunidades:renderOportunidades,tareas:renderTareas,seguimiento:renderSeguimiento,promociones:renderPromociones,compromisos:renderCompromisos,trabajadores:renderTrabajadores};
   if(renders[id]) renders[id]();
 }
 async function refreshAllData(){
@@ -446,11 +448,15 @@ function renderDashboard() {
   // próximas promociones por cliente (del mes en curso en adelante)
   const MESES_FULL = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
   const mesIdxMap = {ENE:0,FEB:1,MAR:2,ABR:3,MAY:4,JUN:5,JUL:6,AGO:7,SEP:8,OCT:9,NOV:10,DIC:11};
-  const proxPromos = DB_PROMOS.filter(p=>{
-    const mFull = (p.mes||'').toUpperCase();
-    const idx = MESES_FULL.indexOf(mFull);
-    return idx >= mesActualIdx;
-  }).slice(0,8);
+  // Promos del mes actual agrupadas por cliente
+  const mesActualFull = MESES_FULL[mesActualIdx];
+  const promosEsteMes = DB_PROMOS.filter(p => (p.mes||'').toUpperCase() === mesActualFull);
+  const promosPorCliente = {};
+  promosEsteMes.forEach(p => {
+    if(!promosPorCliente[p.cliente]) promosPorCliente[p.cliente] = [];
+    promosPorCliente[p.cliente].push(p);
+  });
+  const clientesConPromos = Object.keys(promosPorCliente).sort();
 
   const sm = {Prospecto:'tw-cold','Cliente Potencial':'tw-cold',Calificación:'tw-warm',Propuesta:'tw-hot',Negociación:'tw-hot',Ganado:'tw-won',Perdido:'tw-lost'};
 
@@ -501,16 +507,25 @@ function renderDashboard() {
         </table></div>
       </div>
       <div class="card">
-        <div class="ch"><div class="ct"><i class="ti ti-calendar-event"></i>Próximas promociones</div>
-          <span style="font-size:11px;color:var(--mut)">${mesActual} en adelante</span></div>
-        ${proxPromos.length ? `<div class="tw"><table><thead><tr><th>Cliente</th><th>Mes</th><th>Proveedor</th><th>Temática</th></tr></thead>
-        <tbody>${proxPromos.map(p=>`<tr>
-          <td><strong>${p.cliente}</strong></td>
-          <td style="font-size:11px;color:var(--mut)">${p.mes||''}</td>
-          <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.marca||''}">${p.marca||'—'}</td>
-          <td style="font-size:11px;font-weight:600;color:var(--pur)">${p.tematica||'—'}</td>
-        </tr>`).join('')}</tbody></table></div>` :
-        `<div class="nodata"><i class="ti ti-check" style="color:var(--grn)"></i> Sin próximas promociones pendientes</div>`}
+        <div class="ch"><div class="ct"><i class="ti ti-calendar-event"></i>Promociones ${mesActualFull.charAt(0)+mesActualFull.slice(1).toLowerCase()}</div>
+          <span style="font-size:11px;color:var(--mut)">${promosEsteMes.length} referencias · ${clientesConPromos.length} clientes</span></div>
+        ${clientesConPromos.length ? `
+        <div style="display:flex;flex-direction:column;gap:6px;padding:8px 12px">
+          ${clientesConPromos.map(cli => {
+            const refs = promosPorCliente[cli];
+            const provs = [...new Set(refs.map(r=>r.marca).filter(Boolean))];
+            const si = refs.filter(r=>r.promo_realizada==='si').length;
+            const no = refs.filter(r=>r.promo_realizada==='no').length;
+            return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg);border:0.5px solid var(--brd);border-radius:8px">
+              <span style="font-size:13px;font-weight:700;color:var(--txt);min-width:70px">${cli}</span>
+              <span style="font-size:11px;color:var(--mut);flex:1">${provs.slice(0,3).join(', ')}${provs.length>3?' +'+( provs.length-3):''}</span>
+              <span style="font-size:11px;color:var(--mut)">${refs.length} refs</span>
+              ${si?`<span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:1px 7px;border-radius:10px;font-weight:600">${si} SÍ</span>`:''}
+              ${no?`<span style="font-size:10px;background:#FCEBEB;color:#A32D2D;padding:1px 7px;border-radius:10px;font-weight:600">${no} NO</span>`:''}
+            </div>`;
+          }).join('')}
+        </div>` :
+        `<div class="nodata"><i class="ti ti-check" style="color:var(--grn)"></i> Sin promociones este mes</div>`}
       </div>
     </div>`;
 }
@@ -562,6 +577,9 @@ function renderCliGrid(list) {
       </div>
       <div class="cbody">
         <div class="cst"><span class="csl"><i class="ti ti-cash"></i> Ventas acumuladas</span><span class="csv">€${Math.round(tot).toLocaleString()}</span></div>
+        ${(c.departamentos||[]).length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+          ${(c.departamentos).map(d=>`<span style="font-size:10px;background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:10px;font-weight:600">${d}</span>`).join('')}
+        </div>` : ''}
         ${proxP.length ? `<div style="margin-top:7px;border-top:1px solid var(--brd);padding-top:7px">
           <div style="font-size:10px;font-weight:700;color:var(--mut);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px"><i class="ti ti-calendar-event"></i> Próximas promos</div>
           ${proxP.map(p=>`<div style="font-size:10.5px;margin-bottom:2px;display:flex;align-items:center;gap:5px">
@@ -572,7 +590,8 @@ function renderCliGrid(list) {
         </div>` : ''}
       </div>
       <div class="cfoot">
-        <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="openVP(${c.id})"><i class="ti ti-chart-bar"></i>Ver / Subir ventas</button>
+        <button class="btn btn-sm" style="flex:1;justify-content:center" onclick="openVP(${c.id})"><i class="ti ti-chart-bar"></i>Ver ventas</button>
+        <button class="btn btn-green btn-sm" style="flex:1;justify-content:center" onclick="openBulkCliente(${c.id})"><i class="ti ti-file-spreadsheet"></i>Subir ventas</button>
       </div>
     </div>`;
   }).join('') || '<div class="nodata" style="grid-column:1/-1">Sin clientes</div>';
@@ -580,6 +599,7 @@ function renderCliGrid(list) {
 
 function editCliente(id) {
   const c = DB.clientes.find(x=>x.id===id)||{};
+  if(!c.departamentos) c.departamentos = [];
   currentModal = 'edit-cliente';
   document.getElementById('mttl').innerHTML = `<i class="ti ti-building-store"></i>Editar — ${c.nombre}`;
   document.getElementById('mbody').innerHTML = `
@@ -592,9 +612,56 @@ function editCliente(id) {
     <div class="fr">
       <div class="fg"><div class="fl">Email</div><input class="fi" id="m-email" value="${c.email||''}"></div>
       <div class="fg"><div class="fl">Teléfono</div><input class="fi" id="m-tel" value="${c.tel||''}"></div>
+    </div>
+    <div class="fg" style="margin-top:10px">
+      <div class="fl">Departamentos</div>
+      <div id="m-deptos-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+        ${(c.departamentos||[]).map((d,i)=>`
+          <div style="display:flex;align-items:center;gap:6px">
+            <input class="fi" style="flex:1" value="${d}" oninput="updateDepto(${i},this.value)">
+            <button class="bico" onclick="removeDepto(${i})" title="Eliminar" style="color:var(--red)"><i class="ti ti-x"></i></button>
+          </div>`).join('')}
+      </div>
+      <button class="btn btn-sm" onclick="addDepto()"><i class="ti ti-plus"></i>Añadir departamento</button>
     </div>`;
   document.getElementById('mfoot').innerHTML = `<button class="btn btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="msave" onclick="saveModal()">Guardar</button>`;
   document.getElementById('mbg').classList.add('on');
+}
+
+function addDepto(){
+  const id = parseInt(document.getElementById('m-id')?.value);
+  const c = DB.clientes.find(x=>x.id===id); if(!c) return;
+  if(!c.departamentos) c.departamentos=[];
+  c.departamentos.push('');
+  // Re-render just the list
+  const list = document.getElementById('m-deptos-list');
+  if(list) list.innerHTML = c.departamentos.map((d,i)=>`
+    <div style="display:flex;align-items:center;gap:6px">
+      <input class="fi" style="flex:1" value="${d}" oninput="updateDepto(${i},this.value)">
+      <button class="bico" onclick="removeDepto(${i})" title="Eliminar" style="color:var(--red)"><i class="ti ti-x"></i></button>
+    </div>`).join('');
+  // Focus last input
+  const inputs = list.querySelectorAll('input');
+  if(inputs.length) inputs[inputs.length-1].focus();
+}
+
+function updateDepto(idx, val){
+  const id = parseInt(document.getElementById('m-id')?.value);
+  const c = DB.clientes.find(x=>x.id===id); if(!c) return;
+  if(!c.departamentos) c.departamentos=[];
+  c.departamentos[idx] = val;
+}
+
+function removeDepto(idx){
+  const id = parseInt(document.getElementById('m-id')?.value);
+  const c = DB.clientes.find(x=>x.id===id); if(!c) return;
+  c.departamentos.splice(idx,1);
+  const list = document.getElementById('m-deptos-list');
+  if(list) list.innerHTML = c.departamentos.map((d,i)=>`
+    <div style="display:flex;align-items:center;gap:6px">
+      <input class="fi" style="flex:1" value="${d}" oninput="updateDepto(${i},this.value)">
+      <button class="bico" onclick="removeDepto(${i})" title="Eliminar" style="color:var(--red)"><i class="ti ti-x"></i></button>
+    </div>`).join('');
 }
 
 // ══════════════════════════════════════════════════════
@@ -674,7 +741,9 @@ let vpXLData=[];
 function handleVPXL(ev){
   const file=ev.target.files[0];if(!file)return;
   const prev=document.getElementById('vp-xl-prev');
-  prev.style.display='block';prev.innerHTML='<div style="color:var(--mut);font-size:12px">⏳ Leyendo...</div>';
+  prev.style.display='block';prev.innerHTML='<div style="color:var(--mut);font-size:12px">⏳ Cargando lector Excel...</div>';
+  ensureXLSX().then(()=>{
+  prev.innerHTML='<div style="color:var(--mut);font-size:12px">⏳ Leyendo...</div>';
   const reader=new FileReader();
   reader.onload=function(e){
     try{
@@ -701,6 +770,7 @@ function handleVPXL(ev){
     }catch(err){prev.innerHTML='<div style="color:var(--red)">⚠ Error: '+err.message+'</div>';}
   };
   reader.readAsArrayBuffer(file);
+  }).catch(err=>{prev.innerHTML='<div style="color:var(--red)">⚠ Error cargando lector Excel: '+err.message+'</div>';});
 }
 async function importVPXL(){
   const c=DB.clientes.find(x=>x.id===vpCliente);if(!c)return;
@@ -727,7 +797,6 @@ function renderVentas(){
   document.getElementById('content').innerHTML=`
     <div class="ph"><div class="pt"><i class="ti ti-chart-bar"></i>Ventas</div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-green" onclick="openBulk()"><i class="ti ti-file-spreadsheet"></i>Subir ventas (Excel)</button>
         <button class="btn btn-primary" onclick="openVP(DB.clientes[0]?.id)"><i class="ti ti-plus"></i>Añadir venta</button>
       </div></div>
     <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
@@ -748,16 +817,23 @@ function renderVentas(){
       <tbody>${DB.clientes.filter(c=>(byClient[c.nombre][selMes]||0)>0 || true).sort((a,b)=>(byClient[b.nombre][selMes]||0)-(byClient[a.nombre][selMes]||0)).map(c=>{
         const v=c.ventas.filter(x=>x.mes===selMes).reduce((s,x)=>s+(x.importe||0),0);
         const pct=totalMes>0?Math.round(v/totalMes*100):0;
-        return`<tr>
-          <td><strong style="color:var(--acc);cursor:pointer" onclick="openVP(${c.id})">${c.nombre}</strong></td>
+        const deps=(c.departamentos||[]);
+        const depRows=deps.length?deps.map(d=>{
+          const vd=(c.ventas_dep||{})[d]?.[selMes]||0;
+          const pctD=v>0?Math.round(vd/v*100):0;
+          return`<tr class="vddep vddep-${c.id}" style="display:none;background:#F7F9FD">
+            <td style="padding:4px 13px 4px 32px;font-size:11px;color:var(--mut)"><i class="ti ti-corner-down-right" style="font-size:10px;margin-right:4px"></i>${d}</td>
+            <td style="text-align:right;font-size:11px;color:var(--mut)">${vd>0?'€'+Math.round(vd).toLocaleString():'—'}</td>
+            <td style="text-align:right"><div style="display:flex;align-items:center;justify-content:flex-end;gap:6px"><div style="width:80px;height:5px;background:#EBF0F7;border-radius:3px;overflow:hidden"><div style="height:100%;width:${pctD}%;background:var(--acc);border-radius:3px"></div></div><span style="font-size:10px;color:var(--mut);width:28px;text-align:right">${pctD}%</span></div></td>
+            <td style="text-align:right"><button onclick="editImporteDepMes(${c.id},'${selMes}','${d.replace(/'/g,"\\'")}');" style="padding:2px 7px;border-radius:6px;border:1px solid var(--brd);background:var(--sur);cursor:pointer;font-size:10px;color:var(--mut)"><i class="ti ti-pencil"></i></button></td>
+          </tr>`;
+        }).join(''):`<tr class="vddep vddep-${c.id}" style="display:none;background:#F7F9FD"><td colspan="4" style="padding:4px 13px 4px 32px;font-size:11px;color:var(--mut)">Sin departamentos — <a href="#" onclick="event.preventDefault();nav('clientes')" style="color:var(--acc)">añadir en Clientes</a></td></tr>`;
+        return`<tr onclick="vdToggle(${c.id})" style="cursor:pointer">
+          <td><strong style="color:var(--acc)">${c.nombre}</strong> <i class="ti ti-chevron-down" id="vd_ch_${c.id}" style="font-size:10px;color:var(--mut);transition:.2s;margin-left:4px"></i></td>
           <td style="text-align:right;font-weight:700;color:${v>0?'var(--grn)':'var(--mut)'}">${v>0?'€'+Math.round(v).toLocaleString():'—'}</td>
-          <td style="text-align:right">
-            ${v>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><div style="width:80px;height:6px;background:#EBF0F7;border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--grn);border-radius:3px"></div></div><span style="font-size:11px;color:var(--mut);width:28px;text-align:right">${pct}%</span></div>`:'—'}
-          </td>
-          <td style="text-align:right">
-            <button onclick="editImporteMes(${c.id},'${selMes}')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--brd);background:var(--sur);cursor:pointer;font-size:11px;color:var(--mut)" title="Editar importe"><i class="ti ti-pencil"></i></button>
-          </td>
-        </tr>`;
+          <td style="text-align:right">${v>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px"><div style="width:80px;height:6px;background:#EBF0F7;border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--grn);border-radius:3px"></div></div><span style="font-size:11px;color:var(--mut);width:28px;text-align:right">${pct}%</span></div>`:'—'}</td>
+          <td style="text-align:right"><button onclick="event.stopPropagation();editImporteMes(${c.id},'${selMes}')" style="padding:3px 8px;border-radius:6px;border:1px solid var(--brd);background:var(--sur);cursor:pointer;font-size:11px;color:var(--mut)"><i class="ti ti-pencil"></i></button></td>
+        </tr>${depRows}`;
       }).join('')}
       <tfoot><tr style="background:#EEF5EC">
         <td style="font-weight:700">TOTAL ${selMes}</td>
@@ -773,22 +849,24 @@ function renderVentas(){
         const tot=c.ventas.reduce((a,v)=>a+(v.importe||0),0);
         const pct=total>0?Math.round(tot/total*100):0;
         const pctExact=total>0?(tot/total*100).toFixed(1):'0.0';
-        return`<tr>
-          <td><strong style="color:var(--acc);cursor:pointer" onclick="openVP(${c.id})">${c.nombre}</strong></td>
-          ${MESES.map(m=>{
-            const imp = byClient[c.nombre][m]||0;
-            return `<td style="text-align:right;color:var(--mut);font-size:11.5px;cursor:pointer" onclick="editImporteMes(${c.id},'${m}')" title="Editar ${m}">${imp>0?'€'+Math.round(imp).toLocaleString():'—'}</td>`;
-          }).join('')}
-          <td style="text-align:right;padding-right:10px">
-            ${tot>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:7px">
-              <div style="width:65px;height:7px;background:#EBF0F7;border-radius:4px;overflow:hidden;flex-shrink:0">
-                <div style="height:100%;width:${pct}%;background:var(--grn);border-radius:4px"></div>
-              </div>
-              <span style="font-size:11px;color:var(--mut);min-width:36px;text-align:right;font-weight:600">${pctExact}%</span>
-            </div>`:'—'}
-          </td>
+        const deps=(c.departamentos||[]);
+        const depRows=deps.length?deps.map(d=>{
+          const vd=(c.ventas_dep||{})[d]||{};
+          const totD=MESES.reduce((a,m)=>a+(vd[m]||0),0);
+          const pctD=tot>0?Math.round(totD/tot*100):0;
+          return`<tr class="vddep vddep-a-${c.id}" style="display:none;background:#F7F9FD">
+            <td style="padding:4px 13px 4px 32px;font-size:11px;color:var(--mut)"><i class="ti ti-corner-down-right" style="font-size:10px;margin-right:4px"></i>${d}</td>
+            ${MESES.map(m=>{const imp=vd[m]||0;return`<td style="text-align:right;font-size:10px;color:var(--mut)">${imp>0?'€'+Math.round(imp).toLocaleString():'—'}</td>`;}).join('')}
+            <td style="text-align:right"><div style="display:flex;align-items:center;justify-content:flex-end;gap:6px"><div style="width:65px;height:5px;background:#EBF0F7;border-radius:3px;overflow:hidden"><div style="height:100%;width:${pctD}%;background:var(--acc);border-radius:3px"></div></div><span style="font-size:10px;color:var(--mut);min-width:30px;text-align:right">${pctD}%</span></div></td>
+            <td style="text-align:right;font-size:11px;color:var(--mut)">${totD>0?'€'+Math.round(totD).toLocaleString():'—'}</td>
+          </tr>`;
+        }).join(''):`<tr class="vddep vddep-a-${c.id}" style="display:none;background:#F7F9FD"><td colspan="${MESES.length+3}" style="padding:4px 13px 4px 32px;font-size:11px;color:var(--mut)">Sin departamentos definidos</td></tr>`;
+        return`<tr onclick="vdToggle(${c.id},'a')" style="cursor:pointer">
+          <td><strong style="color:var(--acc)">${c.nombre}</strong> <i class="ti ti-chevron-down" id="vd_ch_a_${c.id}" style="font-size:10px;color:var(--mut);transition:.2s;margin-left:4px"></i></td>
+          ${MESES.map(m=>{const imp=byClient[c.nombre][m]||0;return`<td style="text-align:right;color:var(--mut);font-size:11.5px" onclick="event.stopPropagation();editImporteMes(${c.id},'${m}')" title="Editar ${m}">${imp>0?'€'+Math.round(imp).toLocaleString():'—'}</td>`;}).join('')}
+          <td style="text-align:right;padding-right:10px">${tot>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:7px"><div style="width:65px;height:7px;background:#EBF0F7;border-radius:4px;overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct}%;background:var(--grn);border-radius:4px"></div></div><span style="font-size:11px;color:var(--mut);min-width:36px;text-align:right;font-weight:600">${pctExact}%</span></div>`:'—'}</td>
           <td style="text-align:right;font-weight:700;color:var(--grn)">€${Math.round(tot).toLocaleString()}</td>
-        </tr>`;
+        </tr>${depRows}`;
       }).join('')}
       <tfoot><tr style="background:#EEF5EC">
         <td style="font-weight:700">TOTAL</td>
@@ -849,8 +927,58 @@ async function saveImporteMes(cliId, mes, año) {
 }
 
 // ══════════════════════════════════════════════════════
-//  DIRECTORIO
+//  VENTAS POR DEPARTAMENTO
 // ══════════════════════════════════════════════════════
+function vdToggle(cliId, suffix){
+  const cls = suffix==='a' ? `vddep-a-${cliId}` : `vddep-${cliId}`;
+  const chId = suffix==='a' ? `vd_ch_a_${cliId}` : `vd_ch_${cliId}`;
+  const rows = document.querySelectorAll('.'+cls);
+  if(!rows.length) return;
+  const hidden = rows[0].style.display === 'none';
+  rows.forEach(r => r.style.display = hidden ? '' : 'none');
+  const ch = document.getElementById(chId);
+  if(ch) ch.style.transform = hidden ? 'rotate(180deg)' : '';
+}
+
+function editImporteDepMes(cliId, mes, dep){
+  const c=DB.clientes.find(x=>x.id===cliId); if(!c)return;
+  if(!c.ventas_dep)c.ventas_dep={};
+  if(!c.ventas_dep[dep])c.ventas_dep[dep]={};
+  const año=new Date().getFullYear();
+  const vActual=c.ventas_dep[dep][mes]||0;
+  const html=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" id="edit-dep-bg" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--bg);border-radius:14px;padding:28px 32px;min-width:320px;box-shadow:0 8px 40px rgba(0,0,0,.25)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:2px">${c.nombre}</div>
+        <div style="font-size:12px;color:var(--acc);font-weight:600;margin-bottom:2px">${dep}</div>
+        <div style="font-size:12px;color:var(--mut);margin-bottom:18px">Ventas departamento — <strong>${mes} ${año}</strong></div>
+        <label style="font-size:12px;font-weight:600;color:var(--mut);display:block;margin-bottom:6px">Importe (€)</label>
+        <input id="edit-dep-val" type="number" step="0.01" min="0" value="${vActual.toFixed(2)}"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--brd);border-radius:8px;font-size:16px;font-weight:700;background:var(--sur);color:var(--txt);box-sizing:border-box;margin-bottom:18px"
+          onkeydown="if(event.key==='Enter')saveImporteDepMes(${cliId},'${mes}',\`${dep.replace(/`/g,"'")}\`)">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="document.getElementById('edit-dep-bg').remove()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-weight:600">Cancelar</button>
+          <button onclick="saveImporteDepMes(${cliId},'${mes}',\`${dep.replace(/`/g,"'")}\`)" style="padding:8px 18px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>document.getElementById('edit-dep-val')?.select(),50);
+}
+
+async function saveImporteDepMes(cliId, mes, dep){
+  const input=document.getElementById('edit-dep-val'); if(!input)return;
+  const val=parseFloat(input.value)||0;
+  const c=DB.clientes.find(x=>x.id===cliId); if(!c)return;
+  if(!c.ventas_dep)c.ventas_dep={};
+  if(!c.ventas_dep[dep])c.ventas_dep[dep]={};
+  c.ventas_dep[dep][mes]=val;
+  document.getElementById('edit-dep-bg')?.remove();
+  await save();
+  await refreshAllData();
+  renderVentas();
+  toast(`✓ ${c.nombre} · ${dep} — ${mes}: €${val.toLocaleString()}`);
+}
 let dirCols = {cliente:true,nombre:true,departamento:true,puesto:true,email:true,tel:true,obs:true,estado:true};
 function renderDirectorio(){
   const estados=[...new Set(DB.directorio.map(c=>c.estado).filter(Boolean))].sort();
@@ -1245,8 +1373,55 @@ function renderTrabajadores(){
   const mesVis=parseInt(parseInt(localStorage.getItem(LPREF_VAC_MES)||now.getMonth()));
   document.getElementById('content').innerHTML=`
     <div class="ph"><div class="pt"><i class="ti ti-id-badge"></i>Trabajadores & Vacaciones</div>
-      <button class="btn btn-primary" onclick="openTrabajadorModal()"><i class="ti ti-plus"></i>Nuevo trabajador</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="refreshTrabajadores()"><i class="ti ti-refresh"></i>Refrescar</button>
+        <button class="btn btn-primary" onclick="openTrabajadorModal()"><i class="ti ti-plus"></i>Nuevo trabajador</button>
+      </div>
     </div>
+
+    ${(()=>{
+      // Panel de solicitudes pendientes — visible para jefes de dep o admin
+      const currentUser = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
+      const isJefe = currentUser?.es_jefe_dep || currentUser?.name==='Administrador';
+      const pendientes = [];
+      DB_TRABAJADORES.forEach(t=>{
+        (t.vacaciones||[]).forEach((v,i)=>{
+          if(v.estado==='pendiente'){
+            // Jefe ve solo su depto, admin ve todos
+            const puedeVer = currentUser?.name==='Administrador' || (isJefe && currentUser.departamento===t.departamento);
+            if(puedeVer) pendientes.push({t,v,i});
+          }
+        });
+      });
+      if(!isJefe && currentUser?.name!=='Administrador') return '';
+      return`<div class="card" style="margin-bottom:18px;border-color:${pendientes.length?'#FCD34D':'var(--brd)'}">
+        <div class="ch" style="background:${pendientes.length?'#FFFBEB':'#FAFBFD'}">
+          <div class="ct"><i class="ti ti-shield-check" style="color:${pendientes.length?'var(--amb)':'var(--grn)'}"></i>
+            Validación de vacaciones
+            ${pendientes.length?`<span style="background:var(--amb);color:#fff;font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700;margin-left:6px">${pendientes.length} pendiente${pendientes.length>1?'s':''}</span>`:''}
+          </div>
+        </div>
+        ${pendientes.length?`
+        <div class="tw"><table>
+          <thead><tr><th>Trabajador</th><th>Departamento</th><th>Tipo</th><th>Desde</th><th>Hasta</th><th>Solicitado</th><th>Notas</th><th></th></tr></thead>
+          <tbody>${pendientes.map(({t,v,i})=>`<tr>
+            <td><strong>${t.nombre}</strong></td>
+            <td style="color:var(--mut);font-size:12px">${t.departamento||'—'}</td>
+            <td><span style="font-size:11px;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:10px;font-weight:600">${v.tipo||'Vacaciones'}</span></td>
+            <td style="font-size:12px">${v.desde}</td>
+            <td style="font-size:12px">${v.hasta}</td>
+            <td style="font-size:11px;color:var(--mut)">${v.solicitadoPor||'—'} · ${v.fecha_solicitud||''}</td>
+            <td style="font-size:11px;color:var(--mut);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${v.notas||''}">${v.notas||'—'}</td>
+            <td style="white-space:nowrap">
+              <button onclick="validarVac(${t._id},${i},'aprobada')" style="padding:4px 10px;border-radius:7px;border:none;background:var(--grn);color:#fff;cursor:pointer;font-size:11px;font-weight:700;margin-right:4px"><i class="ti ti-check"></i> Aprobar</button>
+              <button onclick="validarVac(${t._id},${i},'rechazada')" style="padding:4px 10px;border-radius:7px;border:none;background:var(--red);color:#fff;cursor:pointer;font-size:11px;font-weight:700"><i class="ti ti-x"></i> Rechazar</button>
+            </td>
+          </tr>`).join('')}</tbody>
+        </table></div>`
+        :`<div class="nodata" style="padding:16px"><i class="ti ti-check" style="color:var(--grn)"></i> Sin solicitudes pendientes</div>`}
+      </div>`;
+    })()}
+
     <!-- Tabs dept -->
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
       <button onclick="localStorage.setItem(LPREF_DEPT,'');renderTrabajadores()" style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${!localStorage.getItem(LPREF_DEPT)?'var(--acc)':'var(--brd)'};background:${!localStorage.getItem(LPREF_DEPT)?'var(--acc)':'var(--sur)'};color:${!localStorage.getItem(LPREF_DEPT)?'#fff':'var(--mut)'}">Todos</button>
@@ -1255,7 +1430,7 @@ function renderTrabajadores(){
     <!-- Trabajadores table -->
     <div class="card" style="margin-bottom:18px"><div class="ch"><div class="ct"><i class="ti ti-users"></i>Equipo</div></div>
       <div class="tw">
-      <table><thead><tr><th>Nombre</th><th>Departamento</th><th>Puesto</th><th>Email</th><th>Teléfono</th><th>Acceso</th><th></th></tr></thead>
+      <table><thead><tr><th>Nombre</th><th>Departamento</th><th>Puesto</th><th>Email</th><th>Rol</th><th>Acceso</th><th></th></tr></thead>
       <tbody>${(() => {
         const PERM_TABS=[{k:'dashboard',i:'ti-layout-dashboard'},{k:'clientes',i:'ti-building-store'},{k:'ventas',i:'ti-chart-bar'},{k:'directorio',i:'ti-users'},{k:'pipeline',i:'ti-git-fork'},{k:'oportunidades',i:'ti-bulb'},{k:'tareas',i:'ti-checkbox'},{k:'seguimiento',i:'ti-timeline'},{k:'promociones',i:'ti-tag'},{k:'compromisos',i:'ti-file-check'},{k:'trabajadores',i:'ti-id-badge'}];
         const dept=localStorage.getItem(LPREF_DEPT)||'';
@@ -1271,7 +1446,7 @@ function renderTrabajadores(){
           <td style="color:var(--mut)">${t.departamento||''}</td>
           <td style="font-size:11.5px">${t.puesto||''}</td>
           <td style="color:var(--acc);font-size:11.5px">${t.email||''}</td>
-          <td style="font-size:11.5px">${t.tel||''}</td>
+          <td>${t.es_jefe_dep?'<span style="font-size:10px;background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:10px;font-weight:700"><i class="ti ti-shield-check"></i> Jefe dep.</span>':''}</td>
           <td style="white-space:nowrap;max-width:200px"><div style="display:flex;flex-wrap:wrap;gap:3px">${badges}</div></td>
           <td style="white-space:nowrap">
             <button class="bico e" onclick="openTrabajadorModal(${t._id})" title="Editar"><i class="ti ti-pencil"></i></button>
@@ -1288,8 +1463,7 @@ function renderTrabajadores(){
         <button class="bico" onclick="changeVacMes(-1)"><i class="ti ti-chevron-left"></i></button>
         <span style="font-size:13px;font-weight:700;min-width:120px;text-align:center" id="vac-mes-label"></span>
         <button class="bico" onclick="changeVacMes(1)"><i class="ti ti-chevron-right"></i></button>
-        <button class="btn btn-sm" onclick="refreshTrabajadores()"><i class="ti ti-refresh"></i>Refrescar</button>
-        <button class="btn btn-sm btn-primary" onclick="openVacModal()"><i class="ti ti-plus"></i>Vacaciones</button>
+        <button class="btn btn-sm btn-primary" onclick="openVacModal()"><i class="ti ti-plus"></i>Solicitar</button>
         <button class="btn btn-sm" onclick="openEditVacModal()"><i class="ti ti-list"></i>Editar periodos</button>
       </div>
     </div>
@@ -1369,8 +1543,10 @@ function renderVacCal(mesIdx){
           });
           const isWE=fecha.getDay()===0||fecha.getDay()===6;
           const cfg=ausencia?vacTipo(ausencia.tipo||'Vacaciones'):null;
-          return`<td style="text-align:center;border-bottom:1px solid #EBF0F7;border-left:1px solid #EBF0F7;background:${ausencia?cfg.bg:isWE?'#FAF7FF':'transparent'};padding:4px 0" title="${ausencia?(ausencia.tipo||'Vacaciones'):''}">
-            ${ausencia?`<span style="background:${cfg.badge};color:#fff;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700">${cfg.label}</span>`:''}
+          const isPending = ausencia?.estado==='pendiente';
+          const isRejected = ausencia?.estado==='rechazada';
+          return`<td style="text-align:center;border-bottom:1px solid #EBF0F7;border-left:1px solid #EBF0F7;background:${ausencia?(isRejected?'#FEF2F2':isPending?'#FFFBEB':cfg.bg):isWE?'#FAF7FF':'transparent'};padding:4px 0" title="${ausencia?(ausencia.tipo||'Vacaciones')+(isPending?' (pendiente)':isRejected?' (rechazada)':''):''}">
+            ${ausencia?`<span style="background:${isRejected?'#EF4444':isPending?'#F59E0B':cfg.badge};color:#fff;border-radius:3px;font-size:9px;padding:1px 4px;font-weight:700;opacity:${isPending?0.7:1}">${isRejected?'✗':isPending?'?':cfg.label}</span>`:''}
           </td>`;
         }).join('')}</tr>`;
     }).join('')}</tbody>
@@ -1405,9 +1581,19 @@ function openTrabajadorModal(id){
       <div class="fg"><div class="fl">Email</div><input class="fi" id="m-trab-email" value="${t.email||''}" placeholder="correo@empresa.com"></div>
     </div>
     <div class="fg"><div class="fl">Teléfono</div><input class="fi" id="m-trab-tel" value="${t.tel||''}" placeholder="+34 000 000 000"></div>
-    <div class="fg"><div class="fl"><i class="ti ti-lock"></i> Contraseña de acceso al CRM</div>
-      <input class="fi" id="m-trab-pwd" type="password" value="${t.password||''}" placeholder="Contraseña (mín. 4 caracteres)" autocomplete="new-password">
-      <div style="font-size:11px;color:var(--mut);margin-top:4px">Si se deja vacía, el usuario podrá entrar sin contraseña.</div>
+    <div class="fr">
+      <div class="fg"><div class="fl"><i class="ti ti-lock"></i> Contraseña de acceso al CRM</div>
+        <input class="fi" id="m-trab-pwd" type="password" value="${t.password||''}" placeholder="Contraseña (mín. 4 caracteres)" autocomplete="new-password">
+        <div style="font-size:11px;color:var(--mut);margin-top:4px">Si se deja vacía, el usuario podrá entrar sin contraseña.</div>
+      </div>
+      <div class="fg" style="justify-content:flex-end">
+        <div class="fl">Rol</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1.5px solid var(--brd);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-top:4px">
+          <input type="checkbox" id="m-trab-jefe" ${t.es_jefe_dep?'checked':''}>
+          <i class="ti ti-shield-check" style="color:var(--acc)"></i> Jefe de departamento
+        </label>
+        <div style="font-size:11px;color:var(--mut);margin-top:4px">Puede validar vacaciones de su departamento.</div>
+      </div>
     </div>
     <div style="margin-top:16px;border-top:1px solid var(--brd);padding-top:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -1459,7 +1645,8 @@ async function saveTrabajador(){
     permisos[k]=!!(document.getElementById('perm-'+k)?.checked);
   });
   const pwd = document.getElementById('m-trab-pwd')?.value || '';
-  const obj={nombre:nom,departamento:document.getElementById('m-trab-dep')?.value||'',puesto:document.getElementById('m-trab-pue')?.value||'',email:document.getElementById('m-trab-email')?.value||'',tel:document.getElementById('m-trab-tel')?.value||'',permisos,password:pwd};
+  const esJefe = document.getElementById('m-trab-jefe')?.checked || false;
+  const obj={nombre:nom,departamento:document.getElementById('m-trab-dep')?.value||'',puesto:document.getElementById('m-trab-pue')?.value||'',email:document.getElementById('m-trab-email')?.value||'',tel:document.getElementById('m-trab-tel')?.value||'',permisos,password:pwd,es_jefe_dep:esJefe};
   if(id){const t=DB_TRABAJADORES.find(x=>x._id===id);if(t){if(!t.vacaciones)t.vacaciones=[];Object.assign(t,obj);}}
   else{obj._id=nextId(DB_TRABAJADORES);obj.vacaciones=[];DB_TRABAJADORES.push(obj);}
   await saveTrabajadores();writeActivity('trabajadores');toast('✓ Trabajador guardado');closeModal();renderTrabajadores();
@@ -1469,7 +1656,9 @@ async function deleteTrabajador(id){
   await saveTrabajadores();renderTrabajadores();writeActivity('trabajadores');toast('✓ Eliminado');
 }
 function openVacModal(){
-  document.getElementById('mttl').innerHTML='<i class="ti ti-sun-wind"></i>Añadir Vacaciones / Teletrabajo';
+  const currentUser = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
+  const isJefe = currentUser?.es_jefe_dep;
+  document.getElementById('mttl').innerHTML='<i class="ti ti-sun-wind"></i>Solicitar Vacaciones / Ausencia';
   document.getElementById('mbody').innerHTML=`
     <div class="fg"><div class="fl">Trabajador *</div>
       <select class="fi" id="m-vac-trab">
@@ -1486,8 +1675,9 @@ function openVacModal(){
     <div class="fr">
       <div class="fg"><div class="fl">Desde</div><input class="fi" id="m-vac-desde" type="date"></div>
       <div class="fg"><div class="fl">Hasta</div><input class="fi" id="m-vac-hasta" type="date"></div>
-    </div>`;
-  document.getElementById('mfoot').innerHTML=`<button class="btn btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" onclick="saveVacaciones()">Guardar</button>`;
+    </div>
+    <div class="fg"><div class="fl">Notas</div><input class="fi" id="m-vac-notas" placeholder="Motivo u observaciones (opcional)"></div>`;
+  document.getElementById('mfoot').innerHTML=`<button class="btn btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" onclick="saveVacaciones()">Guardar solicitud</button>`;
   document.getElementById('mbg').classList.add('on');
 }
 async function saveVacaciones(){
@@ -1495,20 +1685,34 @@ async function saveVacaciones(){
   const desde  = document.getElementById('m-vac-desde')?.value;
   const hasta  = document.getElementById('m-vac-hasta')?.value;
   const tipo   = document.getElementById('m-vac-tipo')?.value || 'Vacaciones';
+  const notas  = document.getElementById('m-vac-notas')?.value || '';
   if(!desde||!hasta){toast('⚠ Indica fechas de inicio y fin');return;}
   if(hasta<desde){toast('⚠ La fecha de fin no puede ser anterior al inicio');return;}
-  // Match by _id regardless of string/number type
   const t = DB_TRABAJADORES.find(x=>String(x._id)===String(tidRaw));
   if(!t){toast('⚠ Selecciona un trabajador');return;}
   if(!t.vacaciones) t.vacaciones=[];
-  t.vacaciones.push({desde,hasta,tipo});
+  // estado: si el usuario actual es jefe de dep del trabajador → aprobada directamente
+  const currentUser = DB_TRABAJADORES.find(x=>x.nombre===currentUser?.name);
+  const autoApprove = currentUser?.es_jefe_dep && (currentUser.departamento===t.departamento || currentUser.jefe_de==='todos');
+  t.vacaciones.push({desde,hasta,tipo,notas,estado:autoApprove?'aprobada':'pendiente',solicitadoPor:currentUser?.name||'admin',fecha_solicitud:new Date().toISOString().slice(0,10)});
   await saveTrabajadores();
-  toast(`✓ ${tipo} guardada`);
+  toast(autoApprove?`✓ ${tipo} aprobada`:`✓ Solicitud enviada — pendiente de validación`);
   closeModal();
   renderTrabajadores();
 }
 
-async function refreshTrabajadores() {
+async function validarVac(trabId, vacIdx, nuevoEstado){
+  const t = DB_TRABAJADORES.find(x=>x._id===trabId); if(!t) return;
+  if(!t.vacaciones[vacIdx]) return;
+  t.vacaciones[vacIdx].estado = nuevoEstado;
+  t.vacaciones[vacIdx].validadoPor = currentUser?.name||'admin';
+  t.vacaciones[vacIdx].fecha_validacion = new Date().toISOString().slice(0,10);
+  await saveTrabajadores();
+  toast(nuevoEstado==='aprobada'?`✓ Vacaciones aprobadas — ${t.nombre}`:`✓ Vacaciones rechazadas — ${t.nombre}`);
+  renderTrabajadores();
+}
+
+async function refreshTrabajadores(){
   const btn = document.querySelector('[onclick="refreshTrabajadores()"]');
   if (btn) { btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>'; btn.disabled = true; }
   try {
@@ -1782,6 +1986,9 @@ async function saveModal(){
   } else if(currentModal==='edit-cliente'){
     const id=parseInt(document.getElementById('m-id')?.value);
     const c=DB.clientes.find(x=>x.id===id);if(!c)return;
+    // departamentos already updated live via updateDepto/removeDepto
+    // just filter empty ones on save
+    if(c.departamentos) c.departamentos = c.departamentos.filter(d=>d.trim()!=='');
     Object.assign(c,{nombre:document.getElementById('m-nombre')?.value||c.nombre,sector:document.getElementById('m-sector')?.value||'',contacto:document.getElementById('m-contacto')?.value||'',email:document.getElementById('m-email')?.value||'',tel:document.getElementById('m-tel')?.value||''});
     toast('✓ Cliente actualizado');
   } else if(currentModal==='tarea'){
@@ -1892,32 +2099,35 @@ function gC(row,hdrs,keys){for(const k of keys){const kn=nH(k);const h=hdrs.find
 function handleXL(ev){
   const file=ev.target.files[0];if(!file)return;
   const prev=document.getElementById('xl-prev');
-  prev.style.display='block';prev.innerHTML='<div style="color:var(--mut);font-size:12px">⏳ Leyendo...</div>';
-  const reader=new FileReader();
-  reader.onload=function(e){
-    try{
-      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
-      if(!rows.length){prev.innerHTML='<div style="color:var(--red);font-size:12px">⚠ Archivo vacío</div>';return;}
-      const hdrs=Object.keys(rows[0]);
-      xlData=rows.map(r=>({
-        cliente:gC(r,hdrs,['CLIENTE','EMPRESA']),departamento:gC(r,hdrs,['DEPARTAMENTO','DEPTO']),
-        cargo:gC(r,hdrs,['PUESTO','CARGO']),nombre:gC(r,hdrs,['NOMBRE','NAME']),
-        email:gC(r,hdrs,['EMAIL','CORREO']),tel:gC(r,hdrs,['TELEFONO','TEL']),
-        direccion:gC(r,hdrs,['DIRECCION','ADDRESS']),
-        obs:[gC(r,hdrs,['OBS']),gC(r,hdrs,['OBS2'])].filter(Boolean).join(' | '),
-        estado:'Activo',_id:0
-      })).filter(c=>c.nombre||c.cliente);
-      if(!xlData.length){prev.innerHTML='<div style="color:var(--red);font-size:12px">⚠ Sin contactos válidos</div>';return;}
-      prev.innerHTML=`<div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:12px;font-size:12px">
-        <div style="font-weight:700;color:var(--grn);margin-bottom:6px">✓ ${xlData.length} contactos detectados</div>
-        ${xlData.slice(0,5).map(c=>`<div style="color:var(--mut)">· ${c.nombre||'—'} — ${c.cliente||'—'} ${c.email?'<'+c.email+'>':''}</div>`).join('')}
-        ${xlData.length>5?`<div style="color:var(--mut)">...y ${xlData.length-5} más</div>`:''}
-        <button class="btn btn-green btn-sm" style="margin-top:10px;width:100%;justify-content:center" onclick="importXL()"><i class="ti ti-download"></i>Guardar ${xlData.length} contactos</button>
-      </div>`;
-    }catch(err){prev.innerHTML='<div style="color:var(--red)">⚠ Error: '+err.message+'</div>';}
-  };
-  reader.readAsArrayBuffer(file);
+  prev.style.display='block';prev.innerHTML='<div style="color:var(--mut);font-size:12px">⏳ Cargando lector Excel...</div>';
+  ensureXLSX().then(()=>{
+    prev.innerHTML='<div style="color:var(--mut);font-size:12px">⏳ Leyendo...</div>';
+    const reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+        if(!rows.length){prev.innerHTML='<div style="color:var(--red);font-size:12px">⚠ Archivo vacío</div>';return;}
+        const hdrs=Object.keys(rows[0]);
+        xlData=rows.map(r=>({
+          cliente:gC(r,hdrs,['CLIENTE','EMPRESA']),departamento:gC(r,hdrs,['DEPARTAMENTO','DEPTO']),
+          cargo:gC(r,hdrs,['PUESTO','CARGO']),nombre:gC(r,hdrs,['NOMBRE','NAME']),
+          email:gC(r,hdrs,['EMAIL','CORREO']),tel:gC(r,hdrs,['TELEFONO','TEL']),
+          direccion:gC(r,hdrs,['DIRECCION','ADDRESS']),
+          obs:[gC(r,hdrs,['OBS']),gC(r,hdrs,['OBS2'])].filter(Boolean).join(' | '),
+          estado:'Activo',_id:0
+        })).filter(c=>c.nombre||c.cliente);
+        if(!xlData.length){prev.innerHTML='<div style="color:var(--red);font-size:12px">⚠ Sin contactos válidos</div>';return;}
+        prev.innerHTML=`<div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:12px;font-size:12px">
+          <div style="font-weight:700;color:var(--grn);margin-bottom:6px">✓ ${xlData.length} contactos detectados</div>
+          ${xlData.slice(0,5).map(c=>`<div style="color:var(--mut)">· ${c.nombre||'—'} — ${c.cliente||'—'} ${c.email?'<'+c.email+'>':''}</div>`).join('')}
+          ${xlData.length>5?`<div style="color:var(--mut)">...y ${xlData.length-5} más</div>`:''}
+          <button class="btn btn-green btn-sm" style="margin-top:10px;width:100%;justify-content:center" onclick="importXL()"><i class="ti ti-download"></i>Guardar ${xlData.length} contactos</button>
+        </div>`;
+      }catch(err){prev.innerHTML='<div style="color:var(--red)">⚠ Error: '+err.message+'</div>';}
+    };
+    reader.readAsArrayBuffer(file);
+  }).catch(err=>{prev.innerHTML='<div style="color:var(--red)">⚠ Error cargando lector Excel: '+err.message+'</div>';});
 }
 async function importXL(){
   let nextID=nextId(DB.directorio);
@@ -1931,7 +2141,212 @@ async function importXL(){
 }
 
 // ══════════════════════════════════════════════════════
-//  BULK VENTAS UPLOAD
+//  MARCAS / PROVEEDORES
+// ══════════════════════════════════════════════════════
+const MARCAS_DEFAULT = [
+  'A.GASTRONOMIA ARTIGIANI','BONOMELLI','BORBONE','CAMPIELLO','CANNAMELA',
+  'CAPUTO','CASA LOSITO','CHARCUTERIA','CHOCOLATES NAVIDAD','CONGELADO TRE MARIE',
+  'CREMONINI','CUORE','DOLC AMBROSIANA','EVERTON','FREDDI','GAMA NO NAVIDAD',
+  'GRAND CAROB','LA CASA DEI PASTICCINI','LORIANA','MATILDE VICENZI','MESSORI',
+  'MOLINO ROSSETO','MORATO','NOVI','NUTRIFREE','PALUANI','PANEALBA','PISTI',
+  'QUESOS','RISO GALLO','ROBERTO','RUMMO','SAMMONTANA','SORINI FELETTI',
+  'STAGNATI','TARTUFI JIMMY','TIPICO','TOMATE RODOLFI','VALFLEURI',
+  'VALSOIA CREMAS','VALSOIA HELADOS','VALSOIA PLATOS','VALSOIA RESTO','VALSUGANA','WUBER'
+].map((nombre,i)=>({id:i+1,nombre,activa:true,notas:'',ventas:{}}));
+
+let DB_MARCAS = [];
+async function loadMarcas(){
+  try{
+    const r=await window.storage.get(MARCAS_KEY,true);
+    if(r) DB_MARCAS=JSON.parse(r.value);
+    else DB_MARCAS=JSON.parse(JSON.stringify(MARCAS_DEFAULT));
+  }catch(e){ DB_MARCAS=JSON.parse(JSON.stringify(MARCAS_DEFAULT)); }
+}
+async function saveMarcas(){
+  try{ await window.storage.set(MARCAS_KEY,JSON.stringify(DB_MARCAS),true); }catch(e){}
+}
+
+function renderMarcas(){
+  const año=new Date().getFullYear();
+  const total=DB_MARCAS.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
+  document.getElementById('content').innerHTML=`
+    <div class="ph">
+      <div class="pt"><i class="ti ti-rosette"></i>Marcas &amp; Proveedores</div>
+      <div style="display:flex;gap:8px">
+        <input class="fi" id="marca-search" placeholder="Buscar marca..." style="width:200px;padding:7px 12px" oninput="filterMarcas()">
+        <button class="btn btn-primary" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
+      </div>
+    </div>
+    <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kcard"><div class="kl">Total marcas</div><div class="kv">${DB_MARCAS.length}</div></div>
+      <div class="kcard"><div class="kl">Activas</div><div class="kv" style="color:var(--grn)">${DB_MARCAS.filter(m=>m.activa!==false).length}</div></div>
+      <div class="kcard"><div class="kl">Facturación total</div><div class="kv" style="color:var(--grn)">€${Math.round(total).toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Año</div><div class="kv">${año}</div></div>
+    </div>
+    <div class="card"><div class="tw">
+      <table>
+        <thead><tr>
+          <th>Marca / Proveedor</th>
+          ${MESES.map(m=>`<th style="text-align:right">${m}</th>`).join('')}
+          <th style="text-align:right">Total</th>
+          <th style="text-align:right">% Total</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="marcas-tbody"></tbody>
+        <tfoot id="marcas-tfoot"></tfoot>
+      </table>
+    </div></div>`;
+  renderMarcasTable(DB_MARCAS);
+}
+
+function filterMarcas(){
+  const q=(document.getElementById('marca-search')?.value||'').toLowerCase().trim();
+  const list=q?DB_MARCAS.filter(m=>(m.nombre||'').toLowerCase().includes(q)):DB_MARCAS;
+  renderMarcasTable(list);
+}
+
+function renderMarcasTable(list){
+  const tbody=document.getElementById('marcas-tbody');
+  const tfoot=document.getElementById('marcas-tfoot');
+  if(!tbody)return;
+  const grandTotal=DB_MARCAS.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
+
+  tbody.innerHTML=list.map(m=>{
+    const tot=MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0);
+    const pct=grandTotal>0?(tot/grandTotal*100).toFixed(1):'0.0';
+    const pctN=grandTotal>0?Math.round(tot/grandTotal*100):0;
+    return`<tr style="opacity:${m.activa===false?0.45:1}">
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:700;color:var(--txt)">${m.nombre}</span>
+          ${m.activa===false?'<span style="font-size:10px;background:#F1F5F9;color:#475569;padding:1px 6px;border-radius:8px">inactiva</span>':''}
+        </div>
+        ${m.notas?`<div style="font-size:11px;color:var(--mut);margin-top:1px">${m.notas}</div>`:''}
+      </td>
+      ${MESES.map(mes=>{
+        const v=m.ventas[mes]||0;
+        return`<td style="text-align:right;color:var(--mut);font-size:11.5px;cursor:pointer" onclick="editMarcaMes(${m.id},'${mes}')" title="Editar ${mes}">${v>0?'€'+Math.round(v).toLocaleString():'—'}</td>`;
+      }).join('')}
+      <td style="text-align:right;font-weight:700;color:${tot>0?'var(--grn)':'var(--mut)'}">${tot>0?'€'+Math.round(tot).toLocaleString():'—'}</td>
+      <td style="text-align:right;padding-right:8px">
+        ${tot>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+          <div style="width:60px;height:6px;background:#EBF0F7;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pctN}%;background:var(--acc);border-radius:3px"></div>
+          </div>
+          <span style="font-size:11px;color:var(--mut);min-width:32px;text-align:right">${pct}%</span>
+        </div>`:'—'}
+      </td>
+      <td style="text-align:right">
+        <button class="bico e" onclick="editMarca(${m.id})" title="Editar"><i class="ti ti-pencil"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Footer totals
+  const mesTotal=mes=>list.reduce((a,m)=>a+(m.ventas[mes]||0),0);
+  const listTotal=list.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
+  tfoot.innerHTML=`<tr style="background:#EEF5EC">
+    <td style="font-weight:700">TOTAL (${list.length} marcas)</td>
+    ${MESES.map(mes=>{const v=mesTotal(mes);return`<td style="text-align:right;font-weight:700;font-size:11.5px">${v>0?'€'+Math.round(v).toLocaleString():'—'}</td>`;}).join('')}
+    <td style="text-align:right;font-weight:800;color:var(--grn)">€${Math.round(listTotal).toLocaleString()}</td>
+    <td colspan="2"></td>
+  </tr>`;
+}
+
+function editMarca(id){
+  const m = id ? DB_MARCAS.find(x=>x.id===id) : null;
+  const isNew = !m;
+  const html=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" id="marca-modal-bg" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--sur);border-radius:14px;padding:28px 32px;min-width:380px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.25)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px">${isNew?'Nueva marca':'Editar — '+m.nombre}</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Nombre</div>
+            <input id="marca-nombre" class="fi" value="${m?m.nombre:''}" placeholder="Nombre del proveedor">
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Notas</div>
+            <input id="marca-notas" class="fi" value="${m?m.notas||'':''}" placeholder="Observaciones, contacto...">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="marca-activa" ${!m||m.activa!==false?'checked':''}>
+            Marca activa
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+          ${!isNew?`<button onclick="deleteMarca(${m.id})" style="padding:8px 14px;border-radius:8px;border:1.5px solid var(--red);background:var(--sur);color:var(--red);cursor:pointer;font-weight:600;margin-right:auto">Eliminar</button>`:''}
+          <button onclick="document.getElementById('marca-modal-bg').remove()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-weight:600">Cancelar</button>
+          <button onclick="saveMarcaModal(${id||'null'})" style="padding:8px 18px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>document.getElementById('marca-nombre')?.focus(),50);
+}
+
+async function saveMarcaModal(id){
+  const nombre=(document.getElementById('marca-nombre')?.value||'').trim();
+  if(!nombre){toast('⚠ Indica el nombre');return;}
+  const notas=document.getElementById('marca-notas')?.value||'';
+  const activa=document.getElementById('marca-activa')?.checked!==false;
+  if(id){
+    const m=DB_MARCAS.find(x=>x.id===id);
+    if(m){m.nombre=nombre;m.notas=notas;m.activa=activa;}
+  } else {
+    const nextId=DB_MARCAS.length?Math.max(...DB_MARCAS.map(x=>x.id))+1:1;
+    DB_MARCAS.push({id:nextId,nombre,activa,notas,ventas:{}});
+  }
+  document.getElementById('marca-modal-bg')?.remove();
+  await saveMarcas();
+  renderMarcas();
+  toast(id?'✓ Marca actualizada':'✓ Marca añadida');
+}
+
+async function deleteMarca(id){
+  if(!confirm('¿Eliminar esta marca?'))return;
+  DB_MARCAS=DB_MARCAS.filter(x=>x.id!==id);
+  document.getElementById('marca-modal-bg')?.remove();
+  await saveMarcas();
+  renderMarcas();
+  toast('✓ Marca eliminada');
+}
+
+function editMarcaMes(marcaId,mes){
+  const m=DB_MARCAS.find(x=>x.id===marcaId);if(!m)return;
+  const vActual=m.ventas[mes]||0;
+  const año=new Date().getFullYear();
+  const html=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" id="marca-mes-bg" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--sur);border-radius:14px;padding:28px 32px;min-width:320px;box-shadow:0 8px 40px rgba(0,0,0,.25)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:2px">${m.nombre}</div>
+        <div style="font-size:12px;color:var(--mut);margin-bottom:18px">Facturación — <strong>${mes} ${año}</strong></div>
+        <label style="font-size:12px;font-weight:600;color:var(--mut);display:block;margin-bottom:6px">Importe (€)</label>
+        <input id="marca-mes-val" type="number" step="0.01" min="0" value="${vActual.toFixed(2)}"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--brd);border-radius:8px;font-size:16px;font-weight:700;background:var(--sur);color:var(--txt);box-sizing:border-box;margin-bottom:18px"
+          onkeydown="if(event.key==='Enter')saveMarcaMes(${marcaId},'${mes}')">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="document.getElementById('marca-mes-bg').remove()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-weight:600">Cancelar</button>
+          <button onclick="saveMarcaMes(${marcaId},'${mes}')" style="padding:8px 18px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>document.getElementById('marca-mes-val')?.select(),50);
+}
+
+async function saveMarcaMes(marcaId,mes){
+  const val=parseFloat(document.getElementById('marca-mes-val')?.value)||0;
+  const m=DB_MARCAS.find(x=>x.id===marcaId);if(!m)return;
+  if(!m.ventas)m.ventas={};
+  m.ventas[mes]=val;
+  document.getElementById('marca-mes-bg')?.remove();
+  await saveMarcas();
+  renderMarcasTable(DB_MARCAS);
+  toast(`✓ ${m.nombre} — ${mes}: €${val.toLocaleString()}`);
+}
+
+// ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
 let bulkData = [];   // {cliente, cliId, mes, año, importe, unidades, producto, descripcion}
 let bulkUnmatched = [];
@@ -1986,6 +2401,8 @@ function closeBulk(){document.getElementById('bulkbg').classList.remove('on');}
 
 function handleBulkXL(ev){
   const file=ev.target.files[0]; if(!file) return;
+  document.getElementById('bulk-status').innerHTML='<span class="spin"></span> Cargando lector Excel...';
+  ensureXLSX().then(()=>{
   document.getElementById('bulk-status').innerHTML='<span class="spin"></span> Leyendo...';
   const reader=new FileReader();
   reader.onload=function(e){
@@ -2007,8 +2424,19 @@ function handleBulkXL(ev){
       // TALL format: columns are CLIENTE, MES, IMPORTE          → one row per sale
       const MESES_FULL_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-      const monthCols = hdrs.filter(h => MESES_FULL_ES.some(m => nH(m) === nH(h)));
+      // Match both "Enero" and "Imp. Enero" style headers
+      const monthCols = hdrs.filter(h => {
+        const hn = nH(h).replace(/^imp\.?\s*/,'');
+        return MESES_FULL_ES.some(m => nH(m) === nH(h) || nH(m) === hn);
+      });
       const isWideFormat = monthCols.length >= 2;
+      // Helper to extract mes from col header (handles "Imp. Enero" prefix)
+      function colToMes(col){
+        const hn = nH(col).replace(/^imp\.?\s*/,'');
+        const mesLargo = MESES_FULL_ES.find(m => nH(m) === nH(col) || nH(m) === hn);
+        const mesIdx = MESES_FULL_ES.indexOf(mesLargo);
+        return mesIdx >= 0 ? MESES[mesIdx] : null;
+      }
 
       // Build client map (nombre normalizado → cliente object)
       const cliMap={};
@@ -2023,45 +2451,108 @@ function handleBulkXL(ev){
 
       bulkData=[]; bulkUnmatched=[];
       const año = new Date().getFullYear();
+      console.log('[BULK] hdrs:', hdrs);
+      console.log('[BULK] monthCols:', monthCols);
+      console.log('[BULK] isWideFormat:', isWideFormat);
+      console.log('[BULK] rows count:', rows.length);
 
       if(isWideFormat){
-        // ── WIDE FORMAT: CLIENTE | Enero | Febrero | ... ──────────
-        const clientCol = hdrs.find(h => /^(cliente|grupo|group)$/i.test(nH(h))) || hdrs[0];
+        // ── WIDE FORMAT: puede ser CLIENTE|Meses o DPTO|Artículo|Meses ──────────
+        const clientCol = hdrs.find(h => /^(cliente|grupo|group)$/i.test(nH(h)));
+        const dptoCol   = hdrs.find(h => /^(dpto|depto|departamento|dept|dep|seccion|sección|division|divisi[oó]n|cod\.?\s*dep|codigo\s*dep|c[oó]digo\s*dep)/i.test(h.trim()));
+        const descCol   = hdrs.find(h => /descripci[oó]n|articulo|art[íi]culo|producto|description|article/i.test(h));
 
-        rows.forEach((row, i) => {
-          const rawCli = String(row[clientCol]||'').trim();
-          if(!rawCli || /total/i.test(rawCli)) return; // skip totals/empty
+        // Si hay DPTO pero no CLIENTE → formato de un solo cliente con departamentos
+        // El cliente se determina por cuál está abierto en el bulk o por el nombre del archivo
+        const isSingleClientDeptFormat = dptoCol && !clientCol;
+        console.log('[BULK] clientCol:', clientCol, 'dptoCol:', dptoCol, 'isSingleClientDeptFormat:', isSingleClientDeptFormat);
 
-          // match client
-          let matched = cliMap[nH(rawCli)];
-          if(!matched){
-            const k=Object.keys(cliMap).find(k=>k.includes(nH(rawCli))||nH(rawCli).includes(k));
-            if(k) matched=cliMap[k];
+        if(isSingleClientDeptFormat){
+          // Acumular importe por dpto+mes
+          const dptotals = {}; // {dptoRaw: {mes: importe}}
+
+          rows.forEach(row => {
+            const dptoRaw = String(row[dptoCol]||'').trim();
+            if(!dptoRaw) return;
+            if(!dptotals[dptoRaw]) dptotals[dptoRaw] = {};
+            monthCols.forEach(col => {
+              const importe = parseImporte(row[col]);
+              if(!importe) return;
+              const mes = colToMes(col);
+              if(!mes) return;
+              dptotals[dptoRaw][mes] = (dptotals[dptoRaw][mes]||0) + importe;
+            });
+          });
+
+          // Para cada cliente en DB, intentar asociar (el usuario elegirá en preview)
+          // Guardamos como entradas con rawCli = 'AUTO' para que el usuario confirme
+          Object.entries(dptotals).forEach(([dptoRaw, meses]) => {
+            Object.entries(meses).forEach(([mes, importe]) => {
+              if(!importe) return;
+              bulkData.push({
+                cliente:'__DPTO__', cliId:null, mes, año, importe,
+                departamento: dptoRaw, unidades:0, producto:'', descripcion:''
+              });
+            });
+          });
+
+          // Guardar resumen de dptos detectados
+          window.__bulkDptoMap__ = dptotals;
+          window.__bulkDptoFormat__ = true;
+          console.log('[BULK] dptotals keys:', Object.keys(dptotals));
+          console.log('[BULK] bulkData length after push:', bulkData.length);
+          console.log('[BULK] __bulkPreselectedCli__:', window.__bulkPreselectedCli__);
+          if(window.__bulkPreselectedCli__){
+            const cliId = parseInt(window.__bulkPreselectedCli__);
+            const c = DB.clientes.find(x=>x.id===cliId);
+            if(c){
+              const cliDeps = (c.departamentos||[]);
+              bulkData.forEach(r=>{
+                r.cliente = c.nombre;
+                r.cliId   = cliId;
+                if(r.departamento && cliDeps.length){
+                  const match = cliDeps.find(d=>
+                    d===r.departamento || nH(d)===nH(r.departamento) ||
+                    nH(d).includes(nH(r.departamento)) || nH(r.departamento).includes(nH(d))
+                  );
+                  if(match) r.departamento = match;
+                }
+              });
+              window.__bulkDptoFormat__ = false; // ya asignado, ir a preview normal
+            }
           }
 
-          // For each month column
-          monthCols.forEach(col => {
-            const importe = parseImporte(row[col]);
-            if(!importe) return; // skip zero months
+        } else {
+          // Formato normal CLIENTE | Enero | Febrero ...
+          window.__bulkDptoFormat__ = false;
+          rows.forEach((row, i) => {
+            const rawCli = String(row[clientCol]||row[hdrs[0]]||'').trim();
+            if(!rawCli || /total/i.test(rawCli)) return;
 
-            // Map full month name → short abbreviation
-            const mesLargo = MESES_FULL_ES.find(m => nH(m) === nH(col));
-            const mesIdx   = MESES_FULL_ES.indexOf(mesLargo);
-            const mes      = mesIdx >= 0 ? MESES[mesIdx] : null;
-            if(!mes) return;
-
+            let matched = cliMap[nH(rawCli)];
             if(!matched){
-              // Only report unmatched once per client
-              if(!bulkUnmatched.find(u=>u.rawCli===rawCli))
-                bulkUnmatched.push({rawCli, mes, importe, row:i+2});
-            } else {
-              bulkData.push({
-                cliente:matched.nombre, cliId:matched.id, mes, año, importe,
-                unidades:0, producto:'', descripcion:''
-              });
+              const k=Object.keys(cliMap).find(k=>k.includes(nH(rawCli))||nH(rawCli).includes(k));
+              if(k) matched=cliMap[k];
             }
+
+            monthCols.forEach(col => {
+              const importe = parseImporte(row[col]);
+              if(!importe) return;
+              const mes = colToMes(col);
+              if(!mes) return;
+
+              if(!matched){
+                if(!bulkUnmatched.find(u=>u.rawCli===rawCli))
+                  bulkUnmatched.push({rawCli, mes, importe, row:i+2});
+              } else {
+                bulkData.push({
+                  cliente:matched.nombre, cliId:matched.id, mes, año, importe,
+                  unidades:0, producto:'', descripcion:''
+                });
+              }
+            });
           });
-        });
+        }
 
       } else {
         // ── TALL FORMAT: CLIENTE | MES | IMPORTE (original format) ──
@@ -2097,6 +2588,7 @@ function handleBulkXL(ev){
           } else {
             bulkData.push({
               cliente:matched.nombre, cliId:matched.id, mes, año:rowAño, importe,
+              departamento:gc(row,['DEPARTAMENTO','DEPTO','DPTO','DEPT','DEPARTMENT','SECCION','SECCIÓN']),
               unidades:parseFloat(gc(row,['UNIDADES','UNITS','CAJAS','UDS','QTY']).replace(/[^0-9.]/g,''))||0,
               producto:gc(row,['PRODUCTO','FAMILIA','PRODUCT','REFERENCIA']),
               descripcion:gc(row,['DESCRIPCION','DESCRIPCIÓN','NOTAS','NOTES','OBSERVACIONES'])
@@ -2112,6 +2604,7 @@ function handleBulkXL(ev){
     }
   };
   reader.readAsArrayBuffer(file);
+  }).catch(err=>{document.getElementById('bulk-status').textContent='⚠ Error cargando lector Excel: '+err.message;});
 }
 
 function renderBulkPreview(){
@@ -2120,7 +2613,39 @@ function renderBulkPreview(){
     return;
   }
 
-  // Group by cliente
+  // Formato DPTO sin cliente asignado: mostrar selector
+  if(window.__bulkDptoFormat__){
+    const dptoMap = window.__bulkDptoMap__ || {};
+    const dptos = Object.keys(dptoMap);
+    const total = bulkData.reduce((a,r)=>a+r.importe,0);
+    const meses = [...new Set(bulkData.map(r=>r.mes))].sort((a,b)=>MESES.indexOf(a)-MESES.indexOf(b));
+
+    document.getElementById('bulk-status').innerHTML = `
+      <div style="background:#EEF5FC;border:1px solid #A8C4EF;border-radius:10px;padding:14px 16px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;color:var(--acc);margin-bottom:8px">
+          <i class="ti ti-building-store"></i> Archivo por departamentos detectado
+        </div>
+        <div style="font-size:12px;color:var(--mut);margin-bottom:10px">
+          ${dptos.length} departamentos · ${meses.join(', ')} · Total €${Math.round(total).toLocaleString()}
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--txt);margin-bottom:6px">¿A qué cliente corresponde este archivo?</div>
+        <select id="bulk-dpto-cli" class="fi" style="width:100%;margin-bottom:10px">
+          <option value="">— Selecciona cliente —</option>
+          ${DB.clientes.map(c=>`<option value="${c.id}">${c.nombre}</option>`).join('')}
+        </select>
+        <div style="font-size:11px;color:var(--mut);margin-bottom:8px">Departamentos detectados en el Excel:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
+          ${dptos.map(d=>`<span style="font-size:11px;background:#F0F7FD;color:var(--acc);padding:2px 8px;border-radius:8px;font-weight:600">${d}</span>`).join('')}
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="confirmBulkDpto()"><i class="ti ti-check"></i>Confirmar y previsualizar</button>
+      </div>`;
+    document.getElementById('bulk-preview').style.display='none';
+    document.getElementById('bulk-summary').style.display='none';
+    document.getElementById('bulk-import-btn').style.display='none';
+    return;
+  }
+
+  // Group by cliente (modo normal)
   const byClient={};
   bulkData.forEach(r=>{
     if(!byClient[r.cliente])byClient[r.cliente]={cliId:r.cliId,rows:[],total:0};
@@ -2220,28 +2745,95 @@ function removeAlias(key){
 }
 
 function openBulk(){
-  bulkData=[];bulkUnmatched=[];
-  document.getElementById('bulk-preview').style.display='none';
-  document.getElementById('bulk-summary').style.display='none';
-  document.getElementById('bulk-warn').style.display='none';
-  document.getElementById('bulk-import-btn').style.display='none';
-  document.getElementById('bulk-status').textContent='Sube un archivo para comenzar';
-  document.getElementById('bulk-xl').value='';
-  document.getElementById('bulk-zone').style.display='block';
-  document.getElementById('alias-panel').style.display='none';
-  document.getElementById('alias-toggle-btn').innerHTML='<i class="ti ti-settings"></i> Gestionar alias';
-  document.getElementById('alias-count').textContent=Object.keys(ALIASES).length;
+  openBulkCliente(null);
+}
+
+function openBulkCliente(cliId){
+  // Reset completo del estado
+  bulkData=[];
+  bulkUnmatched=[];
+  window.__bulkDptoFormat__ = false;
+  window.__bulkDptoMap__ = {};
+  window.__bulkPreselectedCli__ = cliId ? parseInt(cliId) : null;
+
+  const elems = ['bulk-preview','bulk-summary','bulk-warn','bulk-import-btn'];
+  elems.forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+
+  const xlEl = document.getElementById('bulk-xl');
+  if(xlEl) xlEl.value='';
+
+  const zoneEl = document.getElementById('bulk-zone');
+  if(zoneEl) zoneEl.style.display='block';
+
+  const aliasEl = document.getElementById('alias-panel');
+  if(aliasEl) aliasEl.style.display='none';
+
+  const aliasBtn = document.getElementById('alias-toggle-btn');
+  if(aliasBtn) aliasBtn.innerHTML='<i class="ti ti-settings"></i> Gestionar alias';
+
+  const aliasCount = document.getElementById('alias-count');
+  if(aliasCount) aliasCount.textContent=Object.keys(ALIASES).length;
+
+  // Título y mensaje según cliente preseleccionado
+  const c = cliId ? DB.clientes.find(x=>x.id===parseInt(cliId)) : null;
+  const titleEl = document.querySelector('.bulktitle');
+  if(titleEl) titleEl.innerHTML = c
+    ? `<i class="ti ti-file-spreadsheet"></i>Subir ventas — ${c.nombre}`
+    : `<i class="ti ti-file-spreadsheet"></i>Subir ventas`;
+
+  const statusEl = document.getElementById('bulk-status');
+  if(statusEl) statusEl.innerHTML = c
+    ? `<div style="background:#EEF5FC;border:1px solid #A8C4EF;border-radius:8px;padding:8px 12px;font-size:12px;color:var(--acc);font-weight:600">
+        <i class="ti ti-building-store"></i> Cliente: <strong>${c.nombre}</strong> — sube el Excel con sus ventas
+       </div>`
+    : 'Sube un archivo para comenzar';
+
   document.getElementById('bulkbg').classList.add('on');
 }
 
+function confirmBulkDpto(){
+  // Use preselected client or selector
+  let cliId = window.__bulkPreselectedCli__;
+  if(!cliId){
+    const sel = document.getElementById('bulk-dpto-cli');
+    if(!sel||!sel.value){toast('⚠ Selecciona un cliente');return;}
+    cliId = parseInt(sel.value);
+  }
+  const c = DB.clientes.find(x=>x.id===cliId);
+  if(!c){toast('⚠ Cliente no encontrado');return;}
+
+  // Asignar cliente a todas las entradas y mapear dptos a nombres reales si existen
+  const cliDeps = (c.departamentos||[]);
+  bulkData.forEach(r=>{
+    r.cliente = c.nombre;
+    r.cliId   = cliId;
+    // Intentar mapear código dpto a nombre de departamento del cliente
+    if(r.departamento && cliDeps.length){
+      // Búsqueda: coincidencia exacta, o que el nombre del dep contenga el código, o viceversa
+      const match = cliDeps.find(d=>
+        d === r.departamento ||
+        nH(d) === nH(r.departamento) ||
+        nH(d).includes(nH(r.departamento)) ||
+        nH(r.departamento).includes(nH(d))
+      );
+      if(match) r.departamento = match;
+      // Si no hay match, se queda con el código original del Excel
+    }
+  });
+
+  window.__bulkDptoFormat__ = false;
+  renderBulkPreview();
+}
+
 async function importBulk(){
-  if(!bulkData.length) return;
   const btn=document.getElementById('bulk-import-btn');
   btn.innerHTML='<span class="spin"></span> Importando...'; btn.disabled=true;
 
   let added=0, updated=0;
   bulkData.forEach(r=>{
     const c=DB.clientes.find(x=>x.id===r.cliId); if(!c) return;
+
+    // Guardar en ventas totales del cliente
     const idx=c.ventas.findIndex(v=>v.mes===r.mes&&(v.año||2025)===r.año);
     if(idx>=0){
       c.ventas[idx].importe+=(r.importe||0);
@@ -2253,11 +2845,20 @@ async function importBulk(){
                      producto:r.producto||'',descripcion:r.descripcion||''});
       added++;
     }
+
+    // Guardar en ventas_dep si hay departamento reconocido
+    if(r.departamento){
+      const dep = r.departamento.trim();
+      if(!c.ventas_dep) c.ventas_dep={};
+      if(!c.ventas_dep[dep]) c.ventas_dep[dep]={};
+      c.ventas_dep[dep][r.mes]=(c.ventas_dep[dep][r.mes]||0)+(r.importe||0);
+    }
   });
 
   await save();
   closeBulk();
-  toast('✓ '+bulkData.length+' registros importados — '+Object.keys([...new Set(bulkData.map(r=>r.cliente))]).length+' clientes actualizados');
+  const depCount=bulkData.filter(r=>r.departamento).length;
+  toast(`✓ ${bulkData.length} registros importados${depCount?` · ${depCount} con departamento`:''}`);
   renderVentas();
   btn.innerHTML='<i class="ti ti-download"></i><span>Importar</span>'; btn.disabled=false;
 }
@@ -2682,6 +3283,7 @@ function renderPromociones(){
       <div class="pt"><i class="ti ti-tag"></i>Promociones 2026</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="refreshPromociones()"><i class="ti ti-refresh"></i>Refrescar</button>
+        <button class="btn btn-sm" id="btn-expand-all" onclick="toggleAllPromoMeses()"><i class="ti ti-unfold-more"></i>Desplegar todo</button>
         <button class="btn btn-sm" onclick="openArchivoPromos()"><i class="ti ti-archive"></i>Archivar</button>
         <button class="btn btn-sm" onclick="openRestaurarPromos()"><i class="ti ti-archive-off"></i>Restaurar</button>
         <button class="btn btn-green btn-sm" onclick="openModal('importPromo')"><i class="ti ti-file-spreadsheet"></i>Importar Excel</button>
@@ -2813,7 +3415,7 @@ function renderPromoAgrupada(list){
     ?'<span class="promo-tag pt-si"><span class="dot"></span>SÍ</span>'
     :r==='no'
     ?'<span class="promo-tag pt-no"><span class="dot"></span>NO</span>'
-    :'<span style="color:var(--mut);font-size:11px">—</span>';
+    :'<span style="color:var(--mut);font-size:13px">—</span>';
 
   el.innerHTML = mesesOrdenados.map(mes=>{
     const clientes=Object.keys(byMes[mes]).sort();
@@ -2844,76 +3446,57 @@ function renderPromoAgrupada(list){
 
         const refsHtml=refs.map(r=>{
           const idx=DB_PROMOS.indexOf(r);
-          return`<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:0.5px solid var(--brd);cursor:pointer" onclick="openPromoDetail(${idx})">
-            <span style="font-size:10px;color:var(--mut);font-family:monospace;min-width:100px">${r.ean||'—'}</span>
-            <span style="font-size:11px;color:var(--txt);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.producto||''}">${r.producto||'—'}</span>
-            <span style="font-size:11px;color:var(--mut)">${r.quincena||''}</span>
+          const refVal = r.redencion ? `<span style="font-size:13px;color:var(--grn);font-weight:600;min-width:40px;text-align:right">${fmtRed(r.redencion)}</span>`
+            : r.dcto_factura ? `<span style="font-size:12px;color:var(--mut);max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right" title="${r.dcto_factura}">${r.dcto_factura}</span>`
+            : '';
+          return`<div style="display:flex;align-items:center;gap:6px;padding:2px 10px;border-bottom:0.5px solid var(--brd);cursor:pointer" onclick="openPromoDetail(${idx})">
+            <span style="font-size:12px;color:var(--mut);font-family:monospace;min-width:100px">${r.ean||'—'}</span>
+            <span style="font-size:13px;color:var(--txt);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.producto||''}">${r.producto||'—'}</span>
+            <span style="font-size:12px;color:var(--mut);min-width:20px">${r.quincena||''}</span>
             ${tagReal(r.promo_realizada)}
-            <span style="font-size:11px;color:var(--grn);font-weight:600;min-width:40px;text-align:right">${fmtRed(r.redencion)}</span>
-            <button class="bico e" onclick="event.stopPropagation();editPromo(${idx})" title="Editar" style="flex-shrink:0"><i class="ti ti-pencil"></i></button>
+            ${refVal}
+            <button class="bico e" onclick="event.stopPropagation();editPromo(${idx})" title="Editar" style="flex-shrink:0;width:22px;height:22px"><i class="ti ti-pencil"></i></button>
           </div>`;
         }).join('');
 
-        return`<div style="margin-left:14px;border-left:2px solid var(--brd);padding-left:10px;margin-bottom:4px">
-          <div style="background:var(--sur);border:0.5px solid var(--brd);border-radius:10px;overflow:hidden;margin-bottom:4px">
-            <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer" onclick="pgToggle('${midProv}')">
-              <i class="ti ti-tag" style="font-size:12px;color:var(--mut)"></i>
-              <span style="font-size:12px;font-weight:600;color:var(--txt);flex:1">${prov}</span>
-              <span style="font-size:10px;background:var(--sur);border:0.5px solid var(--brd);padding:2px 8px;border-radius:20px;color:var(--mut)">${refs.length} refs</span>
-              <i class="ti ti-chevron-up" id="ch_${midProv}" style="font-size:13px;color:var(--mut)"></i>
+        return`<div style="margin-left:12px;border-left:2px solid var(--brd);padding-left:6px;margin-bottom:1px">
+          <div style="background:var(--sur);border:0.5px solid var(--brd);border-radius:7px;overflow:hidden;margin-bottom:1px">
+            <div style="display:flex;align-items:center;gap:8px;padding:3px 10px;cursor:pointer" onclick="pgToggle('${midProv}')">
+              <i class="ti ti-tag" style="font-size:13px;color:var(--mut)"></i>
+              <span style="font-size:14px;font-weight:700;color:var(--txt)">${prov}</span>
+              <span style="font-size:12px;color:var(--mut)">${periodo}</span>
+              <span style="font-size:12px;font-weight:700;color:var(--acc)">${tematica}</span>
+              ${si?`<span style="font-size:12px;font-weight:600;color:var(--grn)">${si} SÍ</span>`:''}
+              ${no?`<span style="font-size:12px;font-weight:600;color:var(--red)">${no} NO</span>`:''}
+              ${ndCount?`<span style="font-size:12px;color:var(--mut)">${ndCount} —</span>`:''}
+              ${dcto?`<span style="font-size:12px;color:var(--mut);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${dcto}">${dcto}</span>`:'<span style="flex:1"></span>'}
+              <span style="font-size:12px;background:var(--sur);border:0.5px solid var(--brd);padding:1px 7px;border-radius:20px;color:var(--mut);flex-shrink:0">${refs.length} refs</span>
+              <i class="ti ti-chevron-up" id="ch_${midProv}" style="font-size:14px;color:var(--mut);flex-shrink:0"></i>
             </div>
             <div id="${midProv}" style="border-top:0.5px solid var(--brd)">
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:8px 12px;background:var(--bg)">
-                <div style="display:flex;flex-direction:column;gap:2px">
-                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Período</span>
-                  <span style="font-size:11px;font-weight:600;color:var(--txt)">${periodo}</span>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:2px">
-                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Temática</span>
-                  <span style="font-size:11px;font-weight:600;color:var(--acc)">${tematica}</span>
-                </div>
-                <div style="display:flex;flex-direction:column;gap:2px">
-                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Realizadas</span>
-                  <span style="display:flex;gap:4px;align-items:center">
-                    ${si?`<span style="font-size:11px;font-weight:600;color:var(--grn)">${si} SÍ</span>`:''}
-                    ${no?`<span style="font-size:11px;font-weight:600;color:var(--red)">${no} NO</span>`:''}
-                    ${ndCount?`<span style="font-size:11px;color:var(--mut)">${ndCount} —</span>`:''}
-                  </span>
-                </div>
-              </div>
-              ${redStr||dcto?`<div style="display:grid;grid-template-columns:${redStr&&dcto?'1fr 2fr':'1fr'};gap:6px;padding:0 12px 8px;background:var(--bg)">
-                ${redStr?`<div style="display:flex;flex-direction:column;gap:2px">
-                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Redención media</span>
-                  <span style="font-size:11px;font-weight:600;color:var(--grn)">${fmtRed(redStr)}</span>
-                </div>`:''}
-                ${dcto?`<div style="display:flex;flex-direction:column;gap:2px">
-                  <span style="font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px">Dcto. Factura</span>
-                  <span style="font-size:11px;color:var(--txt)">${dcto}</span>
-                </div>`:''}
-              </div>`:''}
               ${refsHtml}
             </div>
           </div>
         </div>`;
       }).join('');
 
-      return`<div style="margin-left:16px;border-left:2px solid var(--brd);padding-left:10px;margin-bottom:4px">
-        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--sur);border:0.5px solid var(--brd);border-radius:10px;cursor:pointer;margin-bottom:4px" onclick="pgToggle('${midCli}')">
-          <i class="ti ti-building-store" style="font-size:14px;color:var(--mut)"></i>
-          <span style="font-size:13px;font-weight:700;color:var(--txt);flex:1">${cli}</span>
-          <span style="font-size:11px;background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:20px;font-weight:600">${provs.length} prov · ${totalCli} refs</span>
+      return`<div style="margin-left:16px;border-left:2px solid var(--brd);padding-left:8px;margin-bottom:1px">
+        <div style="display:flex;align-items:center;gap:8px;padding:3px 10px;background:var(--sur);border:0.5px solid var(--brd);border-radius:8px;cursor:pointer;margin-bottom:1px" onclick="pgToggle('${midCli}')">
+          <i class="ti ti-building-store" style="font-size:14px;color:#7C1D1D"></i>
+          <span style="font-size:14px;font-weight:700;color:#7C1D1D;flex:1">${cli}</span>
+          <span style="font-size:12px;background:#FEF0F0;color:#7C1D1D;padding:1px 7px;border-radius:20px;font-weight:600">${provs.length} prov · ${totalCli} refs</span>
           <i class="ti ti-chevron-up" id="ch_${midCli}" style="font-size:13px;color:var(--mut)"></i>
         </div>
         <div id="${midCli}">${provHtml}</div>
       </div>`;
     }).join('');
 
-    return`<div style="margin-bottom:10px">
-      <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--sur);border:0.5px solid var(--brd);border-radius:12px;cursor:pointer;margin-bottom:6px" onclick="pgToggle('${midMes}')">
-        <i class="ti ti-calendar-month" style="font-size:16px;color:var(--mut)"></i>
-        <span style="font-size:14px;font-weight:700;color:var(--txt);flex:1">${mes}</span>
-        <span style="font-size:11px;background:var(--sur);border:0.5px solid var(--brd);padding:2px 8px;border-radius:20px;color:var(--mut)">${clientes.length} clientes · ${totalMes} refs</span>
-        <i class="ti ti-chevron-up" id="ch_${midMes}" style="font-size:14px;color:var(--mut)"></i>
+    return`<div style="margin-bottom:4px">
+      <div style="display:flex;align-items:center;gap:10px;padding:5px 14px;background:var(--sur);border:0.5px solid var(--brd);border-radius:10px;cursor:pointer;margin-bottom:2px" onclick="pgToggle('${midMes}')">
+        <i class="ti ti-calendar-month" style="font-size:15px;color:var(--mut)"></i>
+        <span style="font-size:15px;font-weight:700;color:var(--txt);flex:1">${mes}</span>
+        <span style="font-size:12px;background:var(--sur);border:0.5px solid var(--brd);padding:1px 8px;border-radius:20px;color:var(--mut)">${clientes.length} clientes · ${totalMes} refs</span>
+        <i class="ti ti-chevron-up" id="ch_${midMes}" style="font-size:15px;color:var(--mut)"></i>
       </div>
       <div id="${midMes}">${cliHtml}</div>
     </div>`;
@@ -2927,6 +3510,25 @@ function pgToggle(id){
   const hidden=el.style.display==='none';
   el.style.display=hidden?'':'none';
   if(ch){ ch.style.transform=hidden?'':'rotate(180deg)'; }
+}
+
+let promoTodosDesplegados = false;
+function toggleAllPromoMeses(){
+  promoTodosDesplegados = !promoTodosDesplegados;
+  const btn = document.getElementById('btn-expand-all');
+  if(btn){
+    btn.innerHTML = promoTodosDesplegados
+      ? '<i class="ti ti-fold"></i>Recoger todo'
+      : '<i class="ti ti-unfold-more"></i>Desplegar todo';
+  }
+  // Buscar todos los elementos que empiezan por pg_ en el contenedor agrupada
+  const container = document.getElementById('promo-agrupada');
+  if(!container) return;
+  container.querySelectorAll('[id^="pg_"]').forEach(el => {
+    el.style.display = promoTodosDesplegados ? '' : 'none';
+    const ch = document.getElementById('ch_' + el.id);
+    if(ch) ch.style.transform = promoTodosDesplegados ? '' : 'rotate(180deg)';
+  });
 }
 
 function hl2(t,q){if(!q||!t)return t||'';return String(t).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark style="background:#FEF3C7;border-radius:2px">$1</mark>');}
@@ -3287,7 +3889,7 @@ async function bootApp() {
   showUserSelect();
 
   // Carga el resto en segundo plano sin bloquear la UI
-  Promise.all([loadPromos(), loadOportunidades(), loadCompromisos()]).then(() => {
+  Promise.all([loadPromos(), loadOportunidades(), loadCompromisos(), loadMarcas()]).then(() => {
     updatePromoBadge();
     // Refrescar la vista actual si el usuario ya está en dashboard o promos
     if (currentView === 'dashboard') renderDashboard();
@@ -3310,38 +3912,37 @@ bootApp();
       <div class="bulk-steps">
         <div class="bulk-step">
           <div class="bulk-step-num">1</div>
-          <div class="bulk-step-title">Prepara tu Excel</div>
-          <div class="bulk-step-desc">Una fila por venta. La columna CLIENTE debe coincidir con el nombre exacto de tus clientes: ECI, MAKRO, CONSUM…</div>
+          <div class="bulk-step-title">Exporta desde tu sistema</div>
+          <div class="bulk-step-desc">El Excel debe tener el formato estándar: <strong>DPTO · Código · Descripción · Imp. Enero · Imp. Febrero…</strong> — igual que el informe de ventas habitual.</div>
         </div>
         <div class="bulk-step">
           <div class="bulk-step-num">2</div>
           <div class="bulk-step-title">Sube el archivo</div>
-          <div class="bulk-step-desc">El sistema lee el Excel, detecta a qué cliente pertenece cada fila y agrupa los importes por mes.</div>
+          <div class="bulk-step-desc">El sistema suma el importe de todos los artículos de cada departamento y lo asigna al mes correspondiente.</div>
         </div>
         <div class="bulk-step">
           <div class="bulk-step-num">3</div>
           <div class="bulk-step-title">Revisa e importa</div>
-          <div class="bulk-step-desc">Verás una previsualización por cliente antes de confirmar. Las filas no reconocidas se muestran aparte.</div>
+          <div class="bulk-step-desc">Verás un resumen por departamento antes de confirmar. Los datos pasan automáticamente a la pestaña Ventas.</div>
         </div>
       </div>
 
       <!-- Format info -->
       <div class="bulk-format">
-        <div class="bulk-format-title"><i class="ti ti-info-circle"></i>Formato del Excel</div>
+        <div class="bulk-format-title"><i class="ti ti-info-circle"></i>Formato estándar del Excel</div>
         <div class="bulk-cols">
-          <span class="bulk-col required">CLIENTE ★</span>
-          <span class="bulk-col required">MES ★</span>
-          <span class="bulk-col required">IMPORTE ★</span>
-          <span class="bulk-col">AÑO</span>
-          <span class="bulk-col">UNIDADES</span>
-          <span class="bulk-col">PRODUCTO</span>
-          <span class="bulk-col">DESCRIPCIÓN</span>
+          <span class="bulk-col required">DPTO ★</span>
+          <span class="bulk-col">Código de artículo</span>
+          <span class="bulk-col">Descripción artículo</span>
+          <span class="bulk-col required">Imp. Enero ★</span>
+          <span class="bulk-col required">Imp. Febrero ★</span>
+          <span class="bulk-col" style="opacity:.6">Imp. Marzo…</span>
         </div>
         <div class="bulk-sample">
-          ★ Obligatorio &nbsp;·&nbsp;
-          CLIENTE: nombre exacto (ECI, MAKRO, CONSUM…) &nbsp;·&nbsp;
-          MES: Ene, Feb, Mar… o Enero, January… &nbsp;·&nbsp;
-          IMPORTE: número sin símbolo €
+          ★ Obligatorios &nbsp;·&nbsp;
+          <strong>DPTO</strong>: código o nombre del departamento (180, 183, 206, A, B…) &nbsp;·&nbsp;
+          Las columnas de meses pueden llamarse <em>Imp. Enero</em>, <em>Enero</em>, <em>January</em>… &nbsp;·&nbsp;
+          El sistema suma todos los artículos de cada DPTO por mes automáticamente
         </div>
       </div>
 
