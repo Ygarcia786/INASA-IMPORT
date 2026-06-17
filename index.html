@@ -707,15 +707,18 @@ function refreshVP() {
   if (!rows.length) { tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   tbody.innerHTML = rows.map((v,i)=>{
-    const deps = (c.departamentos||[]);
-    const depRows = deps.length ? deps.map(d=>{
-      const vd = ((c.ventas_dep||{})[d]||{})[v.mes]||0;
-      return vd>0 ? `<tr style="background:#F7F9FD">
+    const depData = c.ventas_dep || {};
+    // Mostrar todos los departamentos que tienen datos para este mes
+    const depKeys = Object.keys(depData).filter(d => (depData[d][v.mes]||0) > 0);
+    const depRows = depKeys.length ? depKeys.map(d=>{
+      const vd = (depData[d][v.mes]||0);
+      const pct = v.importe > 0 ? Math.round(vd/v.importe*100) : 0;
+      return `<tr style="background:#F7F9FD">
         <td></td>
         <td style="padding-left:24px;font-size:11px;color:var(--mut)"><i class="ti ti-corner-down-right" style="font-size:10px"></i> ${d}</td>
         <td style="color:var(--acc);font-size:11px">€${Math.round(vd).toLocaleString()}</td>
-        <td colspan="3" style="font-size:10px;color:var(--mut)">${Math.round(vd/v.importe*100)}%</td>
-      </tr>` : '';
+        <td colspan="3" style="font-size:10px;color:var(--mut)">${pct}%</td>
+      </tr>`;
     }).join('') : '';
     return`<tr>
       <td>${v.año||2025}</td><td><strong>${v.mes}</strong></td>
@@ -2128,8 +2131,23 @@ function fmtRed(v){
   if(isNaN(n)) return v;
   return n.toFixed(3);
 }
-function normH(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');}
-function gC(row,hdrs,keys){for(const k of keys){const kn=normH(k);const h=hdrs.find(h=>normH(h)===kn||normH(h).includes(kn));if(h!==undefined&&row[h]!==undefined&&String(row[h]).trim()!=='')return String(row[h]).trim();}return'';}
+function normH(s){
+  try{return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');}
+  catch(e){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+}
+function gC(row,hdrs,keys){
+  for(const k of keys){
+    // Try exact match first (case-insensitive)
+    const kUp=k.toUpperCase();
+    let h=hdrs.find(h=>h&&h.toString().toUpperCase().trim()===kUp);
+    // Then try normalized match
+    if(!h){const kn=normH(k);h=hdrs.find(h=>h&&normH(h)===kn);}
+    // Then try contains
+    if(!h){const kn=normH(k);h=hdrs.find(h=>h&&normH(h).includes(kn));}
+    if(h!==undefined&&h!==null&&row[h]!==undefined&&String(row[h]).trim()!=='')return String(row[h]).trim();
+  }
+  return'';
+}
 
 function handleXL(ev){
   const file=ev.target.files[0];if(!file)return;
