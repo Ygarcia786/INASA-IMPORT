@@ -2938,6 +2938,7 @@ function renderPromoTable(list){
   if(!tbody)return;
   if(!list.length){tbody.innerHTML='';if(empty)empty.style.display='block';return;}
   if(empty)empty.style.display='none';
+  tbody.innerHTML=list.map((p,i)=>{
     const idx=DB_PROMOS.indexOf(p);
     return`<tr style="cursor:pointer" onclick="openPromoDetail(${idx})">
       <td><strong>${hl2(p.cliente,buscar)}</strong></td>
