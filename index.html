@@ -722,7 +722,7 @@ function refreshVP() {
     }).join('') : '';
     return`<tr>
       <td>${v.año||2026}</td><td><strong>${v.mes}</strong></td>
-      <td style="color:var(--grn);font-weight:700">€${v.importe.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td style="color:var(--grn);font-weight:700">€${parseFloat(v.importe||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
       <td style="color:var(--mut)">${v.unidades||0}</td>
       <td style="color:var(--mut);font-size:11px">${v.descripcion||''}</td>
       <td><button class="bico d" onclick="delVenta(${i})"><i class="ti ti-trash"></i></button></td>
@@ -2132,19 +2132,19 @@ function fmtRed(v){
   return n.toFixed(3);
 }
 function normH(s){
-  try{return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');}
-  catch(e){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+  const str=String(s||'').toUpperCase().trim();
+  // Remove accents without relying on regex character ranges
+  const map={'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ü':'U','Ñ':'N','À':'A','È':'E','Ì':'I','Ò':'O','Ù':'U'};
+  return str.replace(/[ÁÉÍÓÚÜÑÀÈÌÒÙ]/g,c=>map[c]||c).replace(/[^A-Z0-9]/g,'');
 }
 function gC(row,hdrs,keys){
   for(const k of keys){
-    // Try exact match first (case-insensitive)
-    const kUp=k.toUpperCase();
-    let h=hdrs.find(h=>h&&h.toString().toUpperCase().trim()===kUp);
-    // Then try normalized match
-    if(!h){const kn=normH(k);h=hdrs.find(h=>h&&normH(h)===kn);}
-    // Then try contains
-    if(!h){const kn=normH(k);h=hdrs.find(h=>h&&normH(h).includes(kn));}
-    if(h!==undefined&&h!==null&&row[h]!==undefined&&String(row[h]).trim()!=='')return String(row[h]).trim();
+    const kN=normH(k);
+    // Exact match (case-insensitive, no accents)
+    let h=hdrs.find(h=>h&&normH(String(h))===kN);
+    // Contains match
+    if(!h) h=hdrs.find(h=>h&&normH(String(h)).includes(kN));
+    if(h!=null&&row[h]!=null&&String(row[h]).trim()!=='') return String(row[h]).trim();
   }
   return'';
 }
