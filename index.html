@@ -2094,7 +2094,8 @@ function fmtRed(v){
   if(isNaN(n)) return v;
   return n.toFixed(3);
 }
-function gC(row,hdrs,keys){for(const k of keys){const kn=nH(k);const h=hdrs.find(h=>nH(h)===kn||nH(h).includes(kn));if(h!==undefined&&row[h]!==undefined&&String(row[h]).trim()!=='')return String(row[h]).trim();}return'';}
+function normH(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');}
+function gC(row,hdrs,keys){for(const k of keys){const kn=normH(k);const h=hdrs.find(h=>normH(h)===kn||normH(h).includes(kn));if(h!==undefined&&row[h]!==undefined&&String(row[h]).trim()!=='')return String(row[h]).trim();}return'';}
 
 function handleXL(ev){
   const file=ev.target.files[0];if(!file)return;
@@ -2420,22 +2421,22 @@ function handleBulkXL(ev){
       const hdrs=Object.keys(rows[0]);
 
       // ── Detect format ──────────────────────────────────────────
-      // WIDE format: columns are month names (Enero, Febrero...) → one row per client
-      // TALL format: columns are CLIENTE, MES, IMPORTE          → one row per sale
       const MESES_FULL_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-      // Match both "Enero" and "Imp. Enero" style headers
-      const monthCols = hdrs.filter(h => {
-        const hn = nH(h).replace(/^imp\.?\s*/,'');
-        return MESES_FULL_ES.some(m => nH(m) === nH(h) || nH(m) === hn);
-      });
+      // Detección robusta: quita prefijos "Imp.", "Importe", espacios y compara sin acentos
+      function normMes(s){
+        return String(s||'').toLowerCase()
+          .replace(/^imp(orte)?\.?\s*/i,'')  // quita "Imp." o "Importe" al inicio
+          .trim()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // quita acentos
+          .replace(/[^a-z]/g,''); // solo letras
+      }
+      const MESES_NORM = MESES_FULL_ES.map(m => normMes(m));
+      const monthCols = hdrs.filter(h => MESES_NORM.includes(normMes(h)));
       const isWideFormat = monthCols.length >= 2;
-      // Helper to extract mes from col header (handles "Imp. Enero" prefix)
       function colToMes(col){
-        const hn = nH(col).replace(/^imp\.?\s*/,'');
-        const mesLargo = MESES_FULL_ES.find(m => nH(m) === nH(col) || nH(m) === hn);
-        const mesIdx = MESES_FULL_ES.indexOf(mesLargo);
-        return mesIdx >= 0 ? MESES[mesIdx] : null;
+        const idx = MESES_NORM.indexOf(normMes(col));
+        return idx >= 0 ? MESES[idx] : null;
       }
 
       // Build client map (nombre normalizado → cliente object)
@@ -2451,16 +2452,10 @@ function handleBulkXL(ev){
 
       bulkData=[]; bulkUnmatched=[];
       const año = new Date().getFullYear();
-      console.log('[BULK] hdrs:', hdrs);
-      console.log('[BULK] hdrs raw:', JSON.stringify(hdrs));
       hdrs.forEach(h => {
         const hn = nH(h).replace(/^imp\.?\s*/,'');
         const match = MESES_FULL_ES.some(m => nH(m) === nH(h) || nH(m) === hn);
-        console.log('[BULK] hdr:', JSON.stringify(h), '-> nH:', nH(h), '-> clean:', hn, '-> match:', match);
       });
-      console.log('[BULK] monthCols:', monthCols);
-      console.log('[BULK] isWideFormat:', isWideFormat);
-      console.log('[BULK] rows count:', rows.length);
 
       if(isWideFormat){
         // ── WIDE FORMAT: puede ser CLIENTE|Meses o DPTO|Artículo|Meses ──────────
@@ -2471,7 +2466,6 @@ function handleBulkXL(ev){
         // Si hay DPTO pero no CLIENTE → formato de un solo cliente con departamentos
         // El cliente se determina por cuál está abierto en el bulk o por el nombre del archivo
         const isSingleClientDeptFormat = dptoCol && !clientCol;
-        console.log('[BULK] clientCol:', clientCol, 'dptoCol:', dptoCol, 'isSingleClientDeptFormat:', isSingleClientDeptFormat);
 
         if(isSingleClientDeptFormat){
           // Acumular importe por dpto+mes
@@ -2505,9 +2499,6 @@ function handleBulkXL(ev){
           // Guardar resumen de dptos detectados
           window.__bulkDptoMap__ = dptotals;
           window.__bulkDptoFormat__ = true;
-          console.log('[BULK] dptotals keys:', Object.keys(dptotals));
-          console.log('[BULK] bulkData length after push:', bulkData.length);
-          console.log('[BULK] __bulkPreselectedCli__:', window.__bulkPreselectedCli__);
           if(window.__bulkPreselectedCli__){
             const cliId = parseInt(window.__bulkPreselectedCli__);
             const c = DB.clientes.find(x=>x.id===cliId);
