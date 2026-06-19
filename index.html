@@ -36,13 +36,19 @@
   </div>
   <div class="topbar-right">
     <!-- Presence bar -->
-    <div class="presence-bar" id="presence-bar" title="Usuarios activos">
+    <div class="presence-bar" id="presence-bar" title="Usuarios activos ahora">
       <span class="presence-label"><i class="ti ti-users"></i></span>
       <div class="presence-avatars" id="presence-avatars"></div>
       <span class="presence-count" id="presence-count">—</span>
     </div>
+    <!-- Usuario actual + cerrar sesión -->
+    <div id="current-user-chip" style="display:none;align-items:center;gap:6px;padding:4px 10px 4px 6px;border-radius:20px;border:1.5px solid var(--brd);background:var(--sur);font-size:12px;font-weight:600;color:var(--txt);cursor:pointer" onclick="cerrarSesion()" title="Cerrar sesión">
+      <div id="current-user-av" style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff"></div>
+      <span id="current-user-name"></span>
+      <i class="ti ti-logout" style="font-size:13px;color:var(--mut)"></i>
+    </div>
     <div class="save-indicator"><div class="save-dot" id="sdot"></div><span id="slbl">Guardado</span></div>
-    <button class="btn btn-sm" onclick="forceRefresh()" title="Guardar y refrescar todos los datos" style="gap:5px"><i class="ti ti-refresh"></i>Refrescar</button>
+    <button class="btn btn-sm" onclick="forceRefresh()" title="Refrescar datos" style="gap:5px"><i class="ti ti-refresh"></i>Refrescar</button>
     <button class="btn btn-sm" onclick="exportData()"><i class="ti ti-download"></i>Exportar</button>
     <button class="btn btn-sm btn-green" onclick="openModal('import')"><i class="ti ti-file-spreadsheet"></i>Importar contactos</button>
     <button class="btn btn-sm btn-primary" onclick="openModal('deal')"><i class="ti ti-plus"></i>Nueva oportunidad</button>
@@ -1396,6 +1402,20 @@ async function deleteCompromiso(id){
 let DB_TRABAJADORES = [];
 async function loadTrabajadores(){
   try{ const r=await window.storage.get(TRAB_KEY,true); if(r) DB_TRABAJADORES=JSON.parse(r.value); }catch(e){ DB_TRABAJADORES=[]; }
+  // Asegurar que existe el usuario Administrador con contraseña
+  if(!DB_TRABAJADORES.find(t=>t.nombre==='Administrador')){
+    const nextId = DB_TRABAJADORES.length ? Math.max(...DB_TRABAJADORES.map(t=>t._id||0))+1 : 1;
+    DB_TRABAJADORES.unshift({
+      _id:nextId, nombre:'Administrador', departamento:'Dirección',
+      puesto:'Administrador del sistema', email:'admin', tel:'',
+      password:'3ttXha#!hzqx', es_jefe_dep:true, activo:true,
+      permisos:{dashboard:true,clientes:true,ventas:true,directorio:true,pipeline:true,
+                oportunidades:true,tareas:true,seguimiento:true,promociones:true,
+                compromisos:true,trabajadores:true},
+      vacaciones:[]
+    });
+    await saveTrabajadores();
+  }
 }
 async function saveTrabajadores(){
   try{ await window.storage.set(TRAB_KEY,JSON.stringify(DB_TRABAJADORES),true); }catch(e){}
@@ -1467,29 +1487,40 @@ function renderTrabajadores(){
     <!-- Trabajadores table -->
     <div class="card" style="margin-bottom:18px"><div class="ch"><div class="ct"><i class="ti ti-users"></i>Equipo</div></div>
       <div class="tw">
-      <table><thead><tr><th>Nombre</th><th>Departamento</th><th>Puesto</th><th>Email</th><th>Rol</th><th>Acceso</th><th></th></tr></thead>
-      <tbody>${(() => {
+      <table><thead><tr><th>Nombre</th><th>Departamento</th><th>Puesto</th><th>Email</th><th>Rol</th><th>Estado</th><th>Acceso</th><th></th></tr></thead>
+      <tbody>${(()=>{
         const PERM_TABS=[{k:'dashboard',i:'ti-layout-dashboard'},{k:'clientes',i:'ti-building-store'},{k:'ventas',i:'ti-chart-bar'},{k:'directorio',i:'ti-users'},{k:'pipeline',i:'ti-git-fork'},{k:'oportunidades',i:'ti-bulb'},{k:'tareas',i:'ti-checkbox'},{k:'seguimiento',i:'ti-timeline'},{k:'promociones',i:'ti-tag'},{k:'compromisos',i:'ti-file-check'},{k:'trabajadores',i:'ti-id-badge'}];
         const dept=localStorage.getItem(LPREF_DEPT)||'';
         const list=dept?DB_TRABAJADORES.filter(t=>t.departamento===dept):DB_TRABAJADORES;
+        // Leer presencia del cache de sesión
+        let presenceData={};
+        try{presenceData=JSON.parse(sessionStorage.getItem('_presence_cache')||'{}');}catch(e){}
+        const isAdmin = currentUser?.name==='Administrador';
         return list.length?list.map(t=>{
           const p=t.permisos||{};
           const allTrue=PERM_TABS.every(x=>p[x.k]!==false);
           const badges=allTrue
             ?`<span style="font-size:10px;background:#D1FAE5;color:#059669;padding:2px 8px;border-radius:10px;font-weight:700">Acceso total</span>`
-            :PERM_TABS.filter(x=>p[x.k]!==false).map(x=>`<span title="${x.k}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;background:#EEF5FC;color:var(--acc);font-size:11px"><i class="ti ${x.i}"></i></span>`).join('') || `<span style="font-size:10px;color:var(--mut)">Sin acceso</span>`;
+            :PERM_TABS.filter(x=>p[x.k]!==false).map(x=>`<span title="${x.k}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;background:#EEF5FC;color:var(--acc);font-size:11px"><i class="ti ${x.i}"></i></span>`).join('')||`<span style="font-size:10px;color:var(--mut)">Sin acceso</span>`;
+          const isOnline = !!presenceData[t.nombre];
+          const isMe = t.nombre === currentUser?.name;
+          const onlineBadge = isOnline
+            ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--grn);font-weight:700"><span style="width:7px;height:7px;border-radius:50%;background:var(--grn);display:inline-block"></span>Conectado</span>`
+            : `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--mut)"><span style="width:7px;height:7px;border-radius:50%;background:var(--brd);display:inline-block"></span>Desconectado</span>`;
           return`<tr>
-          <td><strong>${t.nombre||''}</strong></td>
+          <td><strong>${t.nombre||''}</strong>${isMe?` <span style="font-size:10px;background:#EEF5FC;color:var(--acc);padding:1px 6px;border-radius:8px;font-weight:700">tú</span>`:''}</td>
           <td style="color:var(--mut)">${t.departamento||''}</td>
           <td style="font-size:11.5px">${t.puesto||''}</td>
           <td style="color:var(--acc);font-size:11.5px">${t.email||''}</td>
           <td>${t.es_jefe_dep?'<span style="font-size:10px;background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:10px;font-weight:700"><i class="ti ti-shield-check"></i> Jefe dep.</span>':''}</td>
+          <td>${onlineBadge}</td>
           <td style="white-space:nowrap;max-width:200px"><div style="display:flex;flex-wrap:wrap;gap:3px">${badges}</div></td>
           <td style="white-space:nowrap">
+            ${isOnline&&(isMe||isAdmin)?`<button class="bico" onclick="cerrarSesionDe('${t.nombre.replace(/'/g,"\\'")}')" title="Cerrar sesión" style="color:var(--amb);border-color:var(--amb)"><i class="ti ti-logout"></i></button>`:''}
             <button class="bico e" onclick="openTrabajadorModal(${t._id})" title="Editar"><i class="ti ti-pencil"></i></button>
             <button class="bico d" onclick="deleteTrabajador(${t._id})"><i class="ti ti-trash"></i></button>
           </td>
-        </tr>`;}).join(''):'<tr><td colspan="7" class="nodata">Sin trabajadores en este departamento.</td></tr>';
+        </tr>`;}).join(''):'<tr><td colspan="8" class="nodata">Sin trabajadores en este departamento.</td></tr>';
       })()}</tbody>
       </table></div>
     </div>
@@ -3762,6 +3793,7 @@ function entrarComoAdmin(e) {
   localStorage.setItem(LPREF_USER_ID, 0);
   localStorage.setItem(LPREF_USER_NAME, 'Administrador');
   document.getElementById('user-select-bg').classList.remove('on');
+  updateUserChip();
   bootPresence();
 }
 
@@ -3790,6 +3822,7 @@ function confirmUserSelection() {
   localStorage.setItem(LPREF_USER_ID, t._id);
   localStorage.setItem(LPREF_USER_NAME, t.nombre);
   document.getElementById('user-select-bg').classList.remove('on');
+  updateUserChip();
   bootPresence();
 }
 
@@ -3801,7 +3834,11 @@ async function readPresence() {
   } catch(e) { return {}; }
 }
 async function writePresence(data) {
-  try { await window.storage.set(PRESENCE_KEY, JSON.stringify(data), true); } catch(e) {}
+  try {
+    await window.storage.set(PRESENCE_KEY, JSON.stringify(data), true);
+    // Cache locally for sync access on page close
+    sessionStorage.setItem('_presence_cache', JSON.stringify(data));
+  } catch(e) {}
 }
 async function readActivity() {
   try {
@@ -3856,6 +3893,43 @@ function renderPresenceBar(data) {
   }).join('') + (extra>0?`<div class="pav pav-more">+${extra}<div class="pav-tooltip">+${extra} más</div></div>`:'');
 }
 
+function updateUserChip() {
+  if (!currentUser) return;
+  const chip = document.getElementById('current-user-chip');
+  const av   = document.getElementById('current-user-av');
+  const nm   = document.getElementById('current-user-name');
+  if (!chip) return;
+  chip.style.display = 'flex';
+  av.style.background = currentUser.color;
+  av.textContent = currentUser.initials;
+  nm.textContent = currentUser.name;
+}
+
+async function cerrarSesionDe(nombre) {
+  const esPropio = nombre === currentUser?.name;
+  const msg = esPropio ? `¿Cerrar tu sesión?` : `¿Cerrar la sesión de ${nombre}?`;
+  if (!confirm(msg)) return;
+  const data = await readPresence();
+  delete data[nombre];
+  await writePresence(data);
+  if (esPropio) {
+    currentUser = null;
+    localStorage.removeItem(LPREF_USER_ID);
+    localStorage.removeItem(LPREF_USER_NAME);
+    clearInterval(presenceTimer);
+    const chip = document.getElementById('current-user-chip');
+    if (chip) chip.style.display = 'none';
+    showUserSelect();
+  } else {
+    toast(`✓ Sesión de ${nombre} cerrada`);
+    renderTrabajadores();
+  }
+}
+
+async function cerrarSesion() {
+  cerrarSesionDe(currentUser?.name);
+}
+
 // ── Remote activity detection ───────────────────────────
 async function checkRemoteActivity() {
   const act = await readActivity();
@@ -3902,20 +3976,59 @@ async function reloadFromRemote() {
 
 // ── Boot presence after user selection ─────────────────
 function bootPresence() {
+  updateUserChip();
   heartbeat();
   presenceTimer = setInterval(heartbeat, PRESENCE_POLL);
-  // Register offline on page close
-  window.addEventListener('beforeunload', async () => {
-    const data = await readPresence();
-    delete data[currentUser?.name];
-    await writePresence(data);
+
+  // Desconectar al cerrar la página — usar sendBeacon para fiabilidad
+  window.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'hidden') {
+      // Página en segundo plano o cerrándose — marcar como offline
+      await removeFromPresence();
+    } else {
+      // Volvió al foco — registrar de nuevo
+      heartbeat();
+    }
   });
+
+  window.addEventListener('beforeunload', () => {
+    // Intentar eliminar de presencia de forma síncrona con sendBeacon
+    try {
+      removeFromPresenceSync();
+    } catch(e) {}
+  });
+
   // Activity on any click/keypress
   let activityDebounce = null;
   document.addEventListener('click', () => {
     clearTimeout(activityDebounce);
     activityDebounce = setTimeout(()=>{ writeActivity('navegando'); }, 500);
   });
+}
+
+async function removeFromPresence() {
+  if (!currentUser) return;
+  try {
+    const data = await readPresence();
+    delete data[currentUser.name];
+    await writePresence(data);
+  } catch(e) {}
+}
+
+function removeFromPresenceSync() {
+  if (!currentUser) return;
+  // Usar fetch síncrono vía sendBeacon si está disponible
+  // Leemos la presencia actual del localStorage como cache
+  try {
+    const cached = sessionStorage.getItem('_presence_cache');
+    if (cached) {
+      const data = JSON.parse(cached);
+      delete data[currentUser.name];
+      const url = `${SB_URL}/rest/v1/${SB_TABLE}`;
+      const body = JSON.stringify({ key: PRESENCE_KEY, value: JSON.stringify(data), updated_at: new Date().toISOString() });
+      navigator.sendBeacon && navigator.sendBeacon(url + '?key=eq.' + encodeURIComponent(PRESENCE_KEY), new Blob([body], {type:'application/json'}));
+    }
+  } catch(e) {}
 }
 
 // ══════════════════════════════════════════════════════
