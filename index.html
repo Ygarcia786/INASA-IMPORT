@@ -2586,9 +2586,15 @@ function renderMarcas(){
     </div>
 
     <div class="card" style="overflow-x:auto"><div class="tw">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--brd);background:#FAFBFD">
+        <input type="checkbox" id="marcas-sel-all" onchange="toggleSelectAllMarcas(this.checked)" title="Seleccionar todas">
+        <span id="marcas-sel-count" style="font-size:11px;color:var(--mut)">0 seleccionadas</span>
+        <button id="marcas-del-btn" onclick="deleteSelectedMarcas()" style="display:none;padding:4px 12px;border-radius:7px;border:none;background:var(--red);color:#fff;font-size:12px;font-weight:700;cursor:pointer"><i class="ti ti-trash"></i> Eliminar seleccionadas</button>
+      </div>
       <table id="marcas-table" style="font-size:10px">
         <thead>
           <tr>
+            <th rowspan="2" style="width:20px;padding:3px 6px"></th>
             <th rowspan="2" style="min-width:120px;font-size:10px;padding:4px 6px">PROVEEDOR</th>
             ${MESES.map(m=>`<th colspan="3" style="text-align:center;border-left:1.5px solid var(--brd);font-size:9px;padding:3px 4px">${m}</th>`).join('')}
             <th colspan="3" style="text-align:center;border-left:2px solid var(--brd);font-size:9px;padding:3px 4px">TOTAL</th>
@@ -2785,6 +2791,35 @@ async function importarSeguimientoXL(){
   renderMarcas();
 }
 
+function toggleSelectAllMarcas(checked){
+  document.querySelectorAll('.marca-cb').forEach(cb=>cb.checked=checked);
+  updateMarcaSelection();
+}
+
+function updateMarcaSelection(){
+  const cbs=[...document.querySelectorAll('.marca-cb')];
+  const sel=cbs.filter(c=>c.checked);
+  const cnt=document.getElementById('marcas-sel-count');
+  const btn=document.getElementById('marcas-del-btn');
+  const all=document.getElementById('marcas-sel-all');
+  if(cnt) cnt.textContent=sel.length>0?`${sel.length} seleccionada${sel.length>1?'s':''}`:' ';
+  if(btn) btn.style.display=sel.length>0?'inline-flex':'none';
+  if(all) all.indeterminate=sel.length>0&&sel.length<cbs.length;
+  if(all&&sel.length===cbs.length&&cbs.length>0) all.checked=true;
+  if(all&&sel.length===0) all.checked=false;
+}
+
+async function deleteSelectedMarcas(){
+  const ids=[...document.querySelectorAll('.marca-cb:checked')].map(c=>parseInt(c.dataset.id));
+  if(!ids.length) return;
+  const names=ids.map(id=>DB_MARCAS.find(m=>m.id===id)?.nombre).filter(Boolean).join(', ');
+  if(!confirm(`¿Eliminar ${ids.length} marca${ids.length>1?'s':''}?\n\n${names}`)) return;
+  DB_MARCAS=DB_MARCAS.filter(m=>!ids.includes(m.id));
+  await saveMarcas();
+  toast(`✓ ${ids.length} marca${ids.length>1?'s':''} eliminada${ids.length>1?'s':''}`);
+  renderMarcas();
+}
+
 function renderSobrestock(){
   const tbody=document.getElementById('sobrestock-tbody');
   if(!tbody)return;
@@ -2893,7 +2928,8 @@ function renderMarcasTable(list){
     const totPrev=MESES.reduce((s,mes)=>s+(prev[mes]||0),0);
     const incr=totPrev>0?(totVentas/totPrev*100):null;
     const incrColor=pc(incr);
-    return`<tr style="opacity:${m.activa===false?0.45:1}">
+    return`<tr style="opacity:${m.activa===false?0.45:1}" id="marca-row-${m.id}">
+      <td style="padding:3px 6px;text-align:center"><input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()"></td>
       <td style="font-size:11px;font-weight:700;padding:3px 6px;white-space:nowrap">${m.nombre}</td>
       ${MESES.map(mes=>{
         const vp=prev[mes]||0,vr=ventas[mes]||0,pct=vp>0?vr/vp*100:null;
