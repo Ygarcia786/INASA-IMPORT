@@ -2544,9 +2544,7 @@ function renderMarcas(){
       <div class="pt"><i class="ti ti-rosette"></i>Marcas &amp; Proveedores</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input class="fi" id="marca-search" placeholder="Buscar marca..." style="width:180px;padding:7px 12px" oninput="filterMarcas()">
-        <button class="btn btn-sm btn-green" onclick="openMarcasXL('seguimiento')"><i class="ti ti-file-spreadsheet"></i>Subir seguimiento</button>
-        <button class="btn btn-sm btn-green" onclick="openMarcasXL('previstos')"><i class="ti ti-target"></i>Subir previstos</button>
-        <button class="btn btn-sm btn-green" onclick="openMarcasXL('ventas')"><i class="ti ti-chart-bar"></i>Subir ventas</button>
+        <button class="btn btn-sm btn-green" onclick="openMarcasXL('seguimiento')"><i class="ti ti-file-spreadsheet"></i>Subir previstos</button>
         <button class="btn btn-primary" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
       </div>
     </div>
@@ -2612,15 +2610,12 @@ function renderMarcas(){
 }
 
 function openMarcasXL(campo){
-  window.__marcasXLCampo__ = campo;
+  window.__marcasXLCampo__ = 'seguimiento';
   const panel=document.getElementById('marcas-xl-panel');
   const title=document.getElementById('marcas-xl-title');
   const hint=document.getElementById('marcas-xl-fmt-hint');
-  const isSeg = campo==='seguimiento';
-  if(title) title.innerHTML=`<i class="ti ti-file-spreadsheet"></i> ${isSeg?'Subir Seguimiento Marcas (CLIENTES+MARCAS+meses)':campo==='previstos'?'Subir Previstos Neto':'Subir Ventas Reales'}`;
-  if(hint) hint.textContent = isSeg
-    ? 'Formato: CLIENTES | MARCAS | previsto neto | real neto | % — agrupa por marca sumando todos los clientes'
-    : 'Formato: MARCA | Ene | Feb | … o PROVEEDORES | Total Ene | Total Feb | …';
+  if(title) title.innerHTML=`<i class="ti ti-file-spreadsheet"></i> Subir Previstos`;
+  if(hint) hint.textContent='Formato: CLIENTES | MARCAS | previsto neto | real neto | % por cada mes — guarda los previstos en cada marca';
   if(panel) panel.style.display='block';
 }
 
@@ -2762,7 +2757,7 @@ async function importarSeguimientoXL(){
   const {marcaData,sobrestockData}=d;
   let matched=0,created=0;
 
-  // Importar marcas
+  // Solo guardar PREVISTOS en cada marca (ventas reales no se tocan)
   Object.entries(marcaData).forEach(([nombre,meses])=>{
     let m=DB_MARCAS.find(x=>x.nombre.toUpperCase()===nombre.toUpperCase());
     if(!m) m=DB_MARCAS.find(x=>x.nombre.toUpperCase().includes(nombre.toUpperCase())||nombre.toUpperCase().includes(x.nombre.toUpperCase()));
@@ -2771,24 +2766,22 @@ async function importarSeguimientoXL(){
       m={id:nextId,nombre,activa:true,notas:'',ventas:{},previstos:{}};
       DB_MARCAS.push(m); created++;
     } else { matched++; }
-    if(!m.ventas) m.ventas={};
     if(!m.previstos) m.previstos={};
-    Object.entries(meses).forEach(([mes,{prev,real}])=>{
+    Object.entries(meses).forEach(([mes,{prev}])=>{
       if(prev>0) m.previstos[mes]=prev;
-      if(real>0) m.ventas[mes]=real;
     });
   });
 
-  // Importar sobrestock
+  // Guardar sobrestock
   if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
   Object.entries(sobrestockData).forEach(([mes,vals])=>{
-    if(!DB_MARCAS._sobrestock[mes]) DB_MARCAS._sobrestock[mes]={};
+    if(!DB_MARCAS._sobrestock[mes]) DB_MARCAS._sobrestock[mes]={coste:0,vendido:0,saldo:0};
     Object.assign(DB_MARCAS._sobrestock[mes], vals);
   });
 
   await saveMarcas();
   document.getElementById('marcas-xl-panel').style.display='none';
-  toast(`✓ ${matched} actualizadas · ${created} creadas · sobrestock importado`);
+  toast(`✓ Previstos importados — ${matched} marcas actualizadas${created?' · '+created+' creadas':''}`);
   renderMarcas();
 }
 
