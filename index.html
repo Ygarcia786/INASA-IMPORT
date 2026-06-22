@@ -2571,19 +2571,19 @@ function renderMarcas(){
     </div>
 
     <div class="card" style="overflow-x:auto"><div class="tw">
-      <table id="marcas-table">
+      <table id="marcas-table" style="font-size:10px">
         <thead>
           <tr>
-            <th rowspan="2" style="min-width:160px">PROVEEDOR</th>
-            ${MESES.map(m=>`<th colspan="2" style="text-align:center;border-left:2px solid var(--brd)">${m}</th>`).join('')}
-            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd)">TOTAL ANUAL</th>
-            <th rowspan="2"></th>
+            <th rowspan="2" style="min-width:120px;font-size:10px;padding:4px 6px">PROVEEDOR</th>
+            ${MESES.map(m=>`<th colspan="3" style="text-align:center;border-left:1.5px solid var(--brd);font-size:9px;padding:3px 4px">${m}</th>`).join('')}
+            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd);font-size:9px;padding:3px 4px">TOTAL</th>
+            <th rowspan="2" style="width:24px"></th>
           </tr>
           <tr>
-            ${MESES.map(()=>`<th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600;border-left:2px solid var(--brd)">PREVISTO</th><th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600">REAL</th>`).join('')}
-            <th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600;border-left:2px solid var(--brd)">PREVISTO</th>
-            <th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600">REAL</th>
-            <th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600">INCR.</th>
+            ${MESES.map(()=>`<th style="text-align:right;font-size:8px;padding:2px 4px;border-left:1.5px solid var(--brd);color:var(--acc)">PREV</th><th style="text-align:right;font-size:8px;padding:2px 4px;color:var(--grn)">REAL</th><th style="text-align:right;font-size:8px;padding:2px 4px;color:var(--mut)">%</th>`).join('')}
+            <th style="text-align:right;font-size:8px;padding:2px 4px;border-left:2px solid var(--brd);color:var(--acc)">PREV</th>
+            <th style="text-align:right;font-size:8px;padding:2px 4px;color:var(--grn)">REAL</th>
+            <th style="text-align:right;font-size:8px;padding:2px 4px;color:var(--mut)">%</th>
           </tr>
         </thead>
         <tbody id="marcas-tbody"></tbody>
@@ -2692,49 +2692,46 @@ function renderMarcasTable(list){
   const tbody=document.getElementById('marcas-tbody');
   const tfoot=document.getElementById('marcas-tfoot');
   if(!tbody)return;
-  const fmtE=v=>v>0?parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-  const fmtPct=v=>v!==null?v.toFixed(2).replace('.',',')+' %':'—';
+  const fmtE=v=>v>0?Math.round(v).toLocaleString('es-ES'):'—';
+  const pc=p=>p===null?'var(--mut)':p>=100?'var(--grn)':p>=75?'var(--amb)':'var(--red)';
+  const cs='text-align:right;font-size:10px;padding:3px 4px;white-space:nowrap;';
 
   tbody.innerHTML=list.map(m=>{
     const ventas=m.ventas||{};
     const prev=m.previstos||{};
     const totVentas=MESES.reduce((s,mes)=>s+(ventas[mes]||0),0);
     const totPrev=MESES.reduce((s,mes)=>s+(prev[mes]||0),0);
-    const incr=totPrev>0?((totVentas-totPrev)/totPrev*100):null;
-    const incrColor=incr===null?'var(--mut)':incr>=0?'var(--grn)':'var(--red)';
+    const incr=totPrev>0?(totVentas/totPrev*100):null;
+    const incrColor=pc(incr);
     return`<tr style="opacity:${m.activa===false?0.45:1}">
-      <td style="font-weight:700;color:var(--txt);white-space:nowrap">
-        ${m.nombre}${m.activa===false?` <span style="font-size:10px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:6px">inactiva</span>`:''}
-        ${m.notas?`<div style="font-size:10px;color:var(--mut);font-weight:400">${m.notas}</div>`:''}
-      </td>
+      <td style="font-size:11px;font-weight:700;padding:3px 6px;white-space:nowrap">${m.nombre}</td>
       ${MESES.map(mes=>{
-        const vp=prev[mes]||0;
-        const vr=ventas[mes]||0;
-        return`<td style="text-align:right;font-size:11px;color:var(--acc);cursor:pointer;border-left:2px solid var(--brd)" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')" title="Previsto ${mes}">${fmtE(vp)}</td>
-               <td style="text-align:right;font-size:11px;color:${vr>0&&vp>0?(vr>=vp?'var(--grn)':'var(--red)'):'var(--mut)'};cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')" title="Real ${mes}">${fmtE(vr)}</td>`;
+        const vp=prev[mes]||0,vr=ventas[mes]||0,pct=vp>0?vr/vp*100:null;
+        return`<td style="${cs}border-left:1.5px solid var(--brd);color:var(--acc);cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')" title="Prev ${mes}">${fmtE(vp)}</td>
+               <td style="${cs}color:${vr>0&&vp>0?(vr>=vp?'var(--grn)':'var(--red)'):'var(--mut)'};cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')" title="Real ${mes}">${fmtE(vr)}</td>
+               <td style="${cs}font-weight:700;color:${pc(pct)}">${pct!==null?Math.round(pct)+'%':'—'}</td>`;
       }).join('')}
-      <td style="text-align:right;font-size:11px;color:var(--acc);font-weight:600;border-left:2px solid var(--brd)">${fmtE(totPrev)}</td>
-      <td style="text-align:right;font-size:11px;color:var(--grn);font-weight:600">${fmtE(totVentas)}</td>
-      <td style="text-align:right;font-size:11px;font-weight:700;color:${incrColor}">${fmtPct(incr)}</td>
-      <td style="text-align:right;white-space:nowrap">
-        <button class="bico e" onclick="editMarca(${m.id})" title="Editar"><i class="ti ti-pencil"></i></button>
-      </td>
+      <td style="${cs}border-left:2px solid var(--brd);color:var(--acc);font-weight:700">${fmtE(totPrev)}</td>
+      <td style="${cs}color:var(--grn);font-weight:700">${fmtE(totVentas)}</td>
+      <td style="${cs}font-weight:700;color:${incrColor}">${totPrev>0?Math.round(totVentas/totPrev*100)+'%':'—'}</td>
+      <td style="padding:2px 3px"><button class="bico e" onclick="editMarca(${m.id})" style="width:20px;height:20px;font-size:11px"><i class="ti ti-pencil"></i></button></td>
     </tr>`;
   }).join('');
 
-  // Footer
   const sumVentas=mes=>list.reduce((a,m)=>a+((m.ventas||{})[mes]||0),0);
   const sumPrev=mes=>list.reduce((a,m)=>a+((m.previstos||{})[mes]||0),0);
   const totV=MESES.reduce((a,m)=>a+sumVentas(m),0);
   const totP=MESES.reduce((a,m)=>a+sumPrev(m),0);
-  const incrT=totP>0?((totV-totP)/totP*100):null;
-  const incrColor=incrT===null?'var(--mut)':incrT>=0?'var(--grn)':'var(--red)';
-  tfoot.innerHTML=`<tr style="background:#EEF5EC;font-weight:700">
-    <td>TOTAL (${list.length})</td>
-    ${MESES.map(mes=>`<td style="text-align:right;font-size:11px;color:var(--acc);border-left:2px solid var(--brd)">${fmtE(sumPrev(mes))}</td><td style="text-align:right;font-size:11px;color:var(--grn)">${fmtE(sumVentas(mes))}</td>`).join('')}
-    <td style="text-align:right;color:var(--acc);border-left:2px solid var(--brd)">${fmtE(totP)}</td>
-    <td style="text-align:right;color:var(--grn)">${fmtE(totV)}</td>
-    <td style="text-align:right;color:${incrColor}">${fmtPct(incrT)}</td>
+  const incrT=totP>0?(totV/totP*100):null;
+  tfoot.innerHTML=`<tr style="background:#EEF5EC;font-weight:700;font-size:10px">
+    <td style="padding:3px 6px">TOTAL (${list.length})</td>
+    ${MESES.map(mes=>{
+      const vp=sumPrev(mes),vr=sumVentas(mes),pct=vp>0?vr/vp*100:null;
+      return`<td style="${cs}border-left:1.5px solid var(--brd);color:var(--acc)">${fmtE(vp)}</td><td style="${cs}color:var(--grn)">${fmtE(vr)}</td><td style="${cs}font-weight:700;color:${pc(pct)}">${pct!==null?Math.round(pct)+'%':'—'}</td>`;
+    }).join('')}
+    <td style="${cs}border-left:2px solid var(--brd);color:var(--acc)">${fmtE(totP)}</td>
+    <td style="${cs}color:var(--grn)">${fmtE(totV)}</td>
+    <td style="${cs}color:${pc(incrT)}">${incrT!==null?Math.round(incrT)+'%':'—'}</td>
     <td></td>
   </tr>`;
 }
