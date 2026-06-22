@@ -2544,6 +2544,7 @@ function renderMarcas(){
       <div class="pt"><i class="ti ti-rosette"></i>Marcas &amp; Proveedores</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input class="fi" id="marca-search" placeholder="Buscar marca..." style="width:180px;padding:7px 12px" oninput="filterMarcas()">
+        <button class="btn btn-sm btn-green" onclick="openMarcasXL('seguimiento')"><i class="ti ti-file-spreadsheet"></i>Subir seguimiento</button>
         <button class="btn btn-sm btn-green" onclick="openMarcasXL('previstos')"><i class="ti ti-target"></i>Subir previstos</button>
         <button class="btn btn-sm btn-green" onclick="openMarcasXL('ventas')"><i class="ti ti-chart-bar"></i>Subir ventas</button>
         <button class="btn btn-primary" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
@@ -2559,8 +2560,8 @@ function renderMarcas(){
 
     <!-- Importador Excel -->
     <div id="marcas-xl-panel" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:12px;padding:16px 20px;margin-bottom:14px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:10px" id="marcas-xl-title"></div>
-      <div style="font-size:11px;color:var(--mut);margin-bottom:10px">Formato: <strong>PROVEEDORES · Total Ene · Total Feb · …</strong> o <strong>MARCA · Ene · Feb · …</strong></div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:6px" id="marcas-xl-title"></div>
+      <div id="marcas-xl-fmt-hint" style="font-size:11px;color:var(--mut);margin-bottom:10px"></div>
       <div style="display:flex;gap:10px;align-items:center">
         <input type="file" id="marcas-xl-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleMarcasXL(event)">
         <button class="btn btn-sm" onclick="document.getElementById('marcas-xl-input').click()"><i class="ti ti-upload"></i>Seleccionar archivo</button>
@@ -2568,6 +2569,22 @@ function renderMarcas(){
         <button class="btn btn-sm" onclick="document.getElementById('marcas-xl-panel').style.display='none'" style="margin-left:auto">Cancelar</button>
       </div>
       <div id="marcas-xl-prev" style="margin-top:10px"></div>
+    </div>
+
+    <!-- Sobrestock panel -->
+    <div class="card" style="margin-bottom:10px">
+      <div class="ch">
+        <div class="ct"><i class="ti ti-stack-2" style="color:var(--amb)"></i> Sobrestock</div>
+        <span style="font-size:11px;color:var(--mut)">Valor a coste · Valor vendido · Saldo (calculado)</span>
+      </div>
+      <div style="overflow-x:auto"><table style="font-size:10px;width:100%">
+        <thead><tr>
+          <th style="padding:3px 8px;min-width:140px">Campo</th>
+          ${MESES.map(m=>`<th style="text-align:right;font-size:9px;padding:2px 5px;border-left:1px solid var(--brd)">${m}</th>`).join('')}
+          <th style="text-align:right;font-size:9px;padding:2px 5px;border-left:2px solid var(--brd)">TOTAL</th>
+        </tr></thead>
+        <tbody id="sobrestock-tbody"></tbody>
+      </table></div>
     </div>
 
     <div class="card" style="overflow-x:auto"><div class="tw">
@@ -2591,13 +2608,19 @@ function renderMarcas(){
       </table>
     </div></div>`;
   renderMarcasTable(DB_MARCAS);
+  renderSobrestock();
 }
 
 function openMarcasXL(campo){
   window.__marcasXLCampo__ = campo;
   const panel=document.getElementById('marcas-xl-panel');
   const title=document.getElementById('marcas-xl-title');
-  if(title) title.innerHTML=`<i class="ti ti-file-spreadsheet"></i> Subir ${campo==='previstos'?'Previstos Neto':'Ventas Reales'} desde Excel`;
+  const hint=document.getElementById('marcas-xl-fmt-hint');
+  const isSeg = campo==='seguimiento';
+  if(title) title.innerHTML=`<i class="ti ti-file-spreadsheet"></i> ${isSeg?'Subir Seguimiento Marcas (CLIENTES+MARCAS+meses)':campo==='previstos'?'Subir Previstos Neto':'Subir Ventas Reales'}`;
+  if(hint) hint.textContent = isSeg
+    ? 'Formato: CLIENTES | MARCAS | previsto neto | real neto | % — agrupa por marca sumando todos los clientes'
+    : 'Formato: MARCA | Ene | Feb | … o PROVEEDORES | Total Ene | Total Feb | …';
   if(panel) panel.style.display='block';
 }
 
@@ -2611,6 +2634,7 @@ function handleMarcasXL(ev){
   const file=ev.target.files[0]; if(!file) return;
   const status=document.getElementById('marcas-xl-status');
   const prev=document.getElementById('marcas-xl-prev');
+  const campo=window.__marcasXLCampo__||'previstos';
   status.textContent='⏳ Cargando...';
   ensureXLSX().then(()=>{
     const reader=new FileReader();
@@ -2618,7 +2642,13 @@ function handleMarcasXL(ev){
       try{
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
         const rawRows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
-        // Encontrar fila cabecera — busca la que tiene nombres de mes
+
+        if(campo==='seguimiento'){
+          parseSeguimientoXL(rawRows, status, prev);
+          return;
+        }
+
+        // Formato simple: MARCA | Ene | Feb ...
         let hdrIdx=0;
         for(let i=0;i<Math.min(8,rawRows.length);i++){
           const r=rawRows[i].map(c=>normMarcaH(c));
@@ -2626,18 +2656,15 @@ function handleMarcasXL(ev){
         }
         const hdrs=rawRows[hdrIdx].map(c=>String(c||'').trim());
         const dataRows=rawRows.slice(hdrIdx+1).filter(r=>String(r[0]||'').trim()!=='');
-        const campo=window.__marcasXLCampo__||'previstos';
         const resultados=[];
         dataRows.forEach(row=>{
           const nombre=String(row[0]||'').trim(); if(!nombre||/total/i.test(nombre)) return;
           const mData={};
           MESES.forEach((mes,idx)=>{
-            // Buscar columna: primero exact, luego contains mes abreviado
             const mesLow=mes.toLowerCase();
             let colIdx=hdrs.findIndex((h,ci)=>ci>0&&normMarcaH(h)===mesLow);
             if(colIdx<0) colIdx=hdrs.findIndex((h,ci)=>ci>0&&normMarcaH(h).replace(/^(total|imp|real|prev|neto)/,'').trim()===mesLow);
             if(colIdx<0) colIdx=hdrs.findIndex((h,ci)=>ci>0&&normMarcaH(h).includes(mesLow));
-            // También por posición (columna idx+1 si no hay headers de mes)
             if(colIdx<0&&row[idx+1]!=='') colIdx=idx+1;
             if(colIdx>=0){
               const raw=String(row[colIdx]||'').replace(/\./g,'').replace(',','.').replace(/[^0-9.-]/g,'');
@@ -2661,6 +2688,176 @@ function handleMarcasXL(ev){
     reader.readAsArrayBuffer(file);
   }).catch(err=>{status.textContent='⚠ Error cargando XLSX: '+err.message;});
 }
+
+function parseSeguimientoXL(rawRows, status, prevEl){
+  // Detectar fila de meses (tiene ENERO, FEBRERO...)
+  const MESES_ES=['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+  let mesRowIdx=-1, dataRowIdx=-1;
+  for(let i=0;i<Math.min(10,rawRows.length);i++){
+    const r=rawRows[i].map(c=>String(c||'').trim().toUpperCase());
+    if(r.some(v=>MESES_ES.includes(v))) {mesRowIdx=i;dataRowIdx=i+2;break;}
+  }
+  if(mesRowIdx<0){prevEl.innerHTML='<div style="color:var(--red)">⚠ No se encontró fila de meses</div>';return;}
+
+  // Mapear columnas de mes → (prev_col, real_col)
+  const mesRow=rawRows[mesRowIdx];
+  const mesCols={};
+  mesRow.forEach((v,i)=>{
+    const vUp=String(v||'').trim().toUpperCase();
+    if(MESES_ES.includes(vUp)){
+      const mesIdx=MESES_ES.indexOf(vUp);
+      mesCols[MESES[mesIdx]]={p:i, r:i+1};
+    }
+  });
+
+  // Parsear datos: col0=cliente, col1=marca, luego por mesCols
+  const SOBRESTOCK_MAP={'sobrestock valor a coste':'coste','sobrestock valor vendido':'vendido','saldo':'saldo'};
+  const marcaData={};  // marca -> {mes -> {prev,real}}
+  const sobrestockData={}; // mes -> {coste,vendido,saldo}
+
+  for(let i=dataRowIdx;i<rawRows.length;i++){
+    const row=rawRows[i];
+    const marca=String(row[1]||'').trim();
+    if(!marca||marca==='MARCAS') continue;
+
+    const marcaLow=marca.toLowerCase();
+    const sobType=Object.entries(SOBRESTOCK_MAP).find(([k])=>marcaLow.includes(k));
+
+    if(sobType){
+      const tipo=sobType[1];
+      Object.entries(mesCols).forEach(([mes,{p,r}])=>{
+        const val=parseFloat(String(row[p]||row[r]||0).toString().replace(/[^0-9.-]/g,''))||0;
+        if(val){
+          if(!sobrestockData[mes]) sobrestockData[mes]={coste:0,vendido:0,saldo:0};
+          sobrestockData[mes][tipo]+=val;
+        }
+      });
+    } else {
+      if(!marcaData[marca]) marcaData[marca]={};
+      Object.entries(mesCols).forEach(([mes,{p,r}])=>{
+        const prev=parseFloat(String(row[p]||0).toString().replace(/[^0-9.-]/g,''))||0;
+        const real=parseFloat(String(row[r]||0).toString().replace(/[^0-9.-]/g,''))||0;
+        if(!marcaData[marca][mes]) marcaData[marca][mes]={prev:0,real:0};
+        marcaData[marca][mes].prev+=prev;
+        marcaData[marca][mes].real+=real;
+      });
+    }
+  }
+
+  const nMarcas=Object.keys(marcaData).length;
+  const nSob=Object.keys(sobrestockData).length;
+  window.__marcasXLData__={tipo:'seguimiento',marcaData,sobrestockData};
+  status.textContent=`✓ ${nMarcas} marcas + sobrestock`;
+  prevEl.innerHTML=`<div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:12px;font-size:12px">
+    <div style="font-weight:700;color:var(--grn);margin-bottom:4px">✓ ${nMarcas} marcas detectadas</div>
+    <div style="color:var(--mut);margin-bottom:4px">${Object.keys(marcaData).slice(0,6).join(', ')}${nMarcas>6?' ...':''}</div>
+    ${nSob?`<div style="color:var(--amb);font-weight:600">+ Sobrestock en ${nSob} meses</div>`:''}
+    <button class="btn btn-green btn-sm" style="margin-top:10px" onclick="importarSeguimientoXL()"><i class="ti ti-download"></i>Importar todo</button>
+  </div>`;
+}
+
+async function importarSeguimientoXL(){
+  const d=window.__marcasXLData__;
+  if(!d||d.tipo!=='seguimiento') return;
+  const {marcaData,sobrestockData}=d;
+  let matched=0,created=0;
+
+  // Importar marcas
+  Object.entries(marcaData).forEach(([nombre,meses])=>{
+    let m=DB_MARCAS.find(x=>x.nombre.toUpperCase()===nombre.toUpperCase());
+    if(!m) m=DB_MARCAS.find(x=>x.nombre.toUpperCase().includes(nombre.toUpperCase())||nombre.toUpperCase().includes(x.nombre.toUpperCase()));
+    if(!m){
+      const nextId=DB_MARCAS.length?Math.max(...DB_MARCAS.map(x=>x.id))+1:1;
+      m={id:nextId,nombre,activa:true,notas:'',ventas:{},previstos:{}};
+      DB_MARCAS.push(m); created++;
+    } else { matched++; }
+    if(!m.ventas) m.ventas={};
+    if(!m.previstos) m.previstos={};
+    Object.entries(meses).forEach(([mes,{prev,real}])=>{
+      if(prev>0) m.previstos[mes]=prev;
+      if(real>0) m.ventas[mes]=real;
+    });
+  });
+
+  // Importar sobrestock
+  if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
+  Object.entries(sobrestockData).forEach(([mes,vals])=>{
+    if(!DB_MARCAS._sobrestock[mes]) DB_MARCAS._sobrestock[mes]={};
+    Object.assign(DB_MARCAS._sobrestock[mes], vals);
+  });
+
+  await saveMarcas();
+  document.getElementById('marcas-xl-panel').style.display='none';
+  toast(`✓ ${matched} actualizadas · ${created} creadas · sobrestock importado`);
+  renderMarcas();
+}
+
+function renderSobrestock(){
+  const tbody=document.getElementById('sobrestock-tbody');
+  if(!tbody)return;
+  const sob=(DB_MARCAS._sobrestock)||{};
+  const fmtE=v=>v?Math.round(v).toLocaleString('es-ES'):'—';
+  const campos=[
+    {key:'coste',label:'Sobrestock valor a coste',color:'var(--amb)'},
+    {key:'vendido',label:'Sobrestock valor vendido',color:'var(--acc)'},
+    {key:'saldo',label:'Saldo (coste − vendido)',color:'var(--grn)',calc:true},
+  ];
+  tbody.innerHTML=campos.map(({key,label,color,calc})=>`
+    <tr style="background:${calc?'#F0FDF4':''}">
+      <td style="font-size:11px;font-weight:700;padding:3px 8px;color:${color}">${label}</td>
+      ${MESES.map(mes=>{
+        const v=calc
+          ? ((sob[mes]?.coste||0)-(sob[mes]?.vendido||0))
+          : (sob[mes]?.[key]||0);
+        return`<td style="text-align:right;font-size:10px;padding:3px 5px;border-left:1px solid var(--brd);${calc?'font-weight:700;color:'+color:''};cursor:${calc?'default':'pointer'}"
+          ${calc?'':` onclick="editSobrestock('${mes}','${key}')"`}>${fmtE(v)}</td>`;
+      }).join('')}
+      <td style="text-align:right;font-size:10px;padding:3px 5px;border-left:2px solid var(--brd);font-weight:700;color:${color}">
+        ${fmtE(calc
+          ? MESES.reduce((a,m)=>a+((sob[m]?.coste||0)-(sob[m]?.vendido||0)),0)
+          : MESES.reduce((a,m)=>a+(sob[m]?.[key]||0),0)
+        )}
+      </td>
+    </tr>`).join('');
+}
+
+function editSobrestock(mes, campo){
+  const sob=(DB_MARCAS._sobrestock||{})[mes]||{};
+  const vActual=sob[campo]||0;
+  const labels={coste:'Valor a coste',vendido:'Valor vendido'};
+  const html=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" id="sob-bg" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--sur);border-radius:14px;padding:28px 32px;min-width:300px;box-shadow:0 8px 40px rgba(0,0,0,.25)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:2px">Sobrestock</div>
+        <div style="font-size:12px;color:var(--mut);margin-bottom:18px">${labels[campo]} — <strong>${mes}</strong></div>
+        <label style="font-size:12px;font-weight:600;color:var(--mut);display:block;margin-bottom:6px">Importe (€)</label>
+        <input id="sob-val" type="number" step="0.01" min="0" value="${vActual.toFixed(2)}"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--brd);border-radius:8px;font-size:16px;font-weight:700;background:var(--sur);color:var(--txt);box-sizing:border-box;margin-bottom:18px"
+          onkeydown="if(event.key==='Enter')saveSobrestock('${mes}','${campo}')">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="document.getElementById('sob-bg').remove()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-weight:600">Cancelar</button>
+          <button onclick="saveSobrestock('${mes}','${campo}')" style="padding:8px 18px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>document.getElementById('sob-val')?.select(),50);
+}
+
+async function saveSobrestock(mes, campo){
+  const val=parseFloat(document.getElementById('sob-val')?.value)||0;
+  if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
+  if(!DB_MARCAS._sobrestock[mes]) DB_MARCAS._sobrestock[mes]={coste:0,vendido:0,saldo:0};
+  DB_MARCAS._sobrestock[mes][campo]=val;
+  // Recalcular saldo
+  const s=DB_MARCAS._sobrestock[mes];
+  s.saldo=s.coste-s.vendido;
+  document.getElementById('sob-bg')?.remove();
+  await saveMarcas();
+  renderSobrestock();
+  toast(`✓ Sobrestock ${mes}: €${val.toLocaleString('es-ES')}`);
+}
+
 
 function normMarcaH(s){
   return String(s||'').toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e')
