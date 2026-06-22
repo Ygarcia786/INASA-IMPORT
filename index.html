@@ -48,8 +48,25 @@
       <i class="ti ti-logout" style="font-size:13px;color:var(--mut)"></i>
     </div>
     <div class="save-indicator"><div class="save-dot" id="sdot"></div><span id="slbl">Guardado</span></div>
-    <button class="btn btn-sm" onclick="forceRefresh()" title="Refrescar datos" style="gap:5px"><i class="ti ti-refresh"></i>Refrescar</button>
-    <button class="btn btn-sm" onclick="exportData()"><i class="ti ti-download"></i>Exportar</button>
+        <div style="position:relative;display:inline-block">
+          <button class="btn btn-sm" onclick="forceRefresh(false)" title="Recargar desde Supabase" style="gap:5px;border-radius:8px 0 0 8px"><i class="ti ti-refresh"></i>Refrescar</button>
+          <button class="btn btn-sm" onclick="document.getElementById('refresh-dd').style.display=document.getElementById('refresh-dd').style.display==='none'?'block':'none'" style="padding:7px 6px;border-radius:0 8px 8px 0;border-left:1px solid rgba(0,0,0,.1)"><i class="ti ti-chevron-down" style="font-size:11px"></i></button>
+          <div id="refresh-dd" style="display:none;position:absolute;top:calc(100% + 4px);right:0;background:var(--sur);border:1.5px solid var(--brd);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);z-index:999;min-width:220px;overflow:hidden">
+            <div onclick="document.getElementById('refresh-dd').style.display='none';forceRefresh(false)" style="padding:10px 14px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+              <i class="ti ti-refresh" style="color:var(--acc)"></i>
+              <div><div style="font-weight:600">Recargar desde Supabase</div><div style="font-size:10px;color:var(--mut)">No guarda cambios locales</div></div>
+            </div>
+            <div onclick="document.getElementById('refresh-dd').style.display='none';guardarYRefrescar()" style="padding:10px 14px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--brd)" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+              <i class="ti ti-device-floppy" style="color:var(--grn)"></i>
+              <div><div style="font-weight:600">Guardar y recargar</div><div style="font-size:10px;color:var(--mut)">Guarda primero, luego recarga</div></div>
+            </div>
+            <div onclick="document.getElementById('refresh-dd').style.display='none';limpiarYGuardar()" style="padding:10px 14px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--brd)" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+              <i class="ti ti-eraser" style="color:var(--amb)"></i>
+              <div><div style="font-weight:600">Limpiar datos huérfanos</div><div style="font-size:10px;color:var(--mut)">Elimina departamentos sin cliente válido</div></div>
+            </div>
+          </div>
+        </div>
+    <button class="btn btn-sm" onclick="abrirConfiguracion()" title="Configuración de vista" style="gap:5px"><i class="ti ti-settings"></i></button>
     <button class="btn btn-sm btn-green" onclick="openModal('import')"><i class="ti ti-file-spreadsheet"></i>Importar contactos</button>
     <button class="btn btn-sm btn-primary" onclick="openModal('deal')"><i class="ti ti-plus"></i>Nueva oportunidad</button>
   </div>
@@ -397,31 +414,74 @@ async function refreshAllData(){
   updatePromoBadge();
 }
 
-async function forceRefresh() {
-  const btn = document.querySelector('[onclick="forceRefresh()"]');
-  if (btn) { btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>Refrescando...'; btn.disabled = true; }
+async function forceRefresh(guardar=false) {
+  const btn = document.querySelector('[onclick="forceRefresh(false)"]');
+  if (btn) { btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i>'; btn.disabled = true; }
   try {
-    // Save current state first
-    await Promise.all([
-      window.storage.set(KEY,        JSON.stringify(DB),               true),
-      savePromos(),
-      window.storage.set(OPORT_KEY,  JSON.stringify(DB_OPORTUNIDADES), true),
-      window.storage.set(COMP_KEY,   JSON.stringify(DB_COMPROMISOS),   true),
-      window.storage.set(TRAB_KEY,   JSON.stringify(DB_TRABAJADORES),  true),
-      window.storage.set(ALIAS_KEY,  JSON.stringify(ALIASES),          true),
-    ]);
-    // Then reload everything
+    if(guardar){
+      // Guardar estado actual primero
+      await Promise.all([
+        window.storage.set(KEY,        JSON.stringify(DB),               true),
+        savePromos(),
+        window.storage.set(OPORT_KEY,  JSON.stringify(DB_OPORTUNIDADES), true),
+        window.storage.set(COMP_KEY,   JSON.stringify(DB_COMPROMISOS),   true),
+        window.storage.set(TRAB_KEY,   JSON.stringify(DB_TRABAJADORES),  true),
+        window.storage.set(ALIAS_KEY,  JSON.stringify(ALIASES),          true),
+      ]);
+    }
+    // Recargar desde Supabase (NO guarda — trae lo que hay en Supabase)
     await refreshAllData();
     renderView(currentView);
-    document.getElementById('sdot').className = 'save-dot saved';
-    document.getElementById('slbl').textContent = 'Guardado ✓';
-    setTimeout(()=>{ document.getElementById('sdot').className='save-dot'; document.getElementById('slbl').textContent='Guardado'; }, 2000);
-    toast('✓ Datos guardados y vista actualizada');
+    toast(guardar ? '✓ Guardado y actualizado' : '✓ Datos recargados desde Supabase');
   } catch(e) {
-    toast('⚠ Error al refrescar: ' + e.message);
+    toast('⚠ Error al refrescar');
+    console.error(e);
   } finally {
     if (btn) { btn.innerHTML = '<i class="ti ti-refresh"></i>Refrescar'; btn.disabled = false; }
+    const dd=document.getElementById('refresh-dd'); if(dd) dd.style.display='none';
   }
+}
+
+function limpiarVentasDepHuerfanos(){
+  // Elimina de ventas_dep cualquier clave que no sea un departamento definido en el cliente
+  // O que pertenezca a un cliente que no existe
+  let count = 0;
+  DB.clientes.forEach(c => {
+    if(!c.ventas_dep) return;
+    const depValidos = new Set(c.departamentos||[]);
+    // Si el cliente no tiene departamentos definidos, limpiar todo ventas_dep
+    if(depValidos.size === 0){
+      if(Object.keys(c.ventas_dep).length > 0){
+        c.ventas_dep = {};
+        count++;
+      }
+      return;
+    }
+    // Eliminar claves que no son departamentos válidos
+    Object.keys(c.ventas_dep).forEach(dep => {
+      if(!depValidos.has(dep)){
+        delete c.ventas_dep[dep];
+        count++;
+      }
+    });
+  });
+  return count;
+}
+
+async function refrescarSinGuardar(){
+  if(!confirm('Esto recargará los datos desde Supabase DESCARTANDO cualquier cambio no guardado en este navegador. ¿Continuar?')) return;
+  await forceRefresh(false);
+}
+
+async function guardarYRefrescar(){
+  await forceRefresh(true);
+}
+
+async function limpiarYGuardar(){
+  const n = limpiarVentasDepHuerfanos();
+  await save();
+  toast(`✓ Limpieza completa — ${n} departamentos huérfanos eliminados`);
+  renderView(currentView);
 }
 
 function updateBadge() {
@@ -1324,7 +1384,7 @@ function renderCompromisos(){
     </div>
     <div class="card"><div class="tw" style="overflow-x:scroll">
       <table><thead><tr>
-        <th>Ejercicio</th><th>Departamento</th><th>Surtido</th><th>Tipo de compromiso</th><th style="text-align:right">Importe (€)</th><th></th>
+        <th>Ejercicio</th><th>Departamento</th><th>Surtido</th><th>Tipo</th><th style="text-align:right">Importe (€)</th><th>Estado</th><th>F. Realización</th><th></th>
       </tr></thead>
       <tbody id="comp-tbody"></tbody></table>
       <div id="comp-empty" class="nodata" style="display:none">Sin compromisos registrados.</div>
@@ -1341,12 +1401,22 @@ function renderCompromisosTable(){
     const ej = c.ejercicio_desde && c.ejercicio_hasta
       ? (c.ejercicio_desde===c.ejercicio_hasta ? c.ejercicio_desde : `${c.ejercicio_desde} — ${c.ejercicio_hasta}`)
       : (c.ejercicio||'—');
+    const estadoBadge = c.estado==='realizado'
+      ? `<span style="background:#D1FAE5;color:#059669;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">✅ Realizado</span>`
+      : c.estado==='cancelado'
+      ? `<span style="background:#FEE2E2;color:#DC2626;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">❌ Cancelado</span>`
+      : `<span style="background:#FEF3C7;color:#D97706;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">⏳ Pendiente</span>`;
+    const fReal = c.fecha_realizacion
+      ? `<span style="font-size:11px;color:var(--grn);font-weight:600">${c.fecha_realizacion}</span>`
+      : '—';
     return`<tr>
     <td style="white-space:nowrap;font-size:12px;font-weight:700;color:var(--acc)">${ej}</td>
     <td>${c.departamento||'—'}</td>
-    <td style="font-size:11.5px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.surtido||'—'}</td>
+    <td style="font-size:11.5px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.surtido||'—'}</td>
     <td><span style="background:#EEF5FC;color:var(--acc);padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700">${c.tipo||'—'}</span></td>
     <td style="text-align:right;font-weight:700;color:var(--grn)">${c.importe?'€'+parseFloat(c.importe).toLocaleString():'—'}</td>
+    <td>${estadoBadge}</td>
+    <td style="text-align:center">${fReal}</td>
     <td style="white-space:nowrap">
       <button class="bico e" onclick="openCompromisoModal(${c._id})" title="Editar"><i class="ti ti-pencil"></i></button>
       <button class="bico d" onclick="deleteCompromiso(${c._id})"><i class="ti ti-trash"></i></button>
@@ -1376,6 +1446,21 @@ function openCompromisoModal(id){
     <div class="fr">
       <div class="fg"><div class="fl">Tipo de compromiso</div><input class="fi" id="m-comp-tipo" value="${c.tipo||''}" placeholder="Ej: Exclusividad, Volumen..."></div>
       <div class="fg"><div class="fl">Importe (€)</div><input class="fi" id="m-comp-imp" type="number" value="${c.importe||''}"></div>
+    </div>
+    <div class="fr">
+      <div class="fg">
+        <div class="fl"><i class="ti ti-calendar-check" style="color:var(--grn)"></i> Fecha de realización</div>
+        <input class="fi" id="m-comp-fecha-real" type="date" value="${c.fecha_realizacion||''}" placeholder="DD/MM/AAAA">
+        <div style="font-size:11px;color:var(--mut);margin-top:3px">Dejar vacío si aún no se ha realizado</div>
+      </div>
+      <div class="fg">
+        <div class="fl">Estado</div>
+        <select class="fi" id="m-comp-estado">
+          <option value="pendiente" ${(!c.estado||c.estado==='pendiente')?'selected':''}>⏳ Pendiente</option>
+          <option value="realizado" ${c.estado==='realizado'?'selected':''}>✅ Realizado</option>
+          <option value="cancelado" ${c.estado==='cancelado'?'selected':''}>❌ Cancelado</option>
+        </select>
+      </div>
     </div>`;
   document.getElementById('mfoot').innerHTML=(id!=null?`<button class="btn btn-red btn-sm" onclick="deleteCompromiso(${id});closeModal()"><i class="ti ti-trash"></i>Eliminar</button><div style="flex:1"></div>`:'')
     +`<button class="btn btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" onclick="saveCompromiso()">Guardar</button>`;
@@ -1386,7 +1471,15 @@ async function saveCompromiso(){
   const id=parseInt(document.getElementById('m-comp-id')?.value||'');
   const desde=parseInt(document.getElementById('m-comp-ej-desde')?.value)||new Date().getFullYear();
   const hasta=parseInt(document.getElementById('m-comp-ej-hasta')?.value)||desde;
-  const obj={ejercicio_desde:desde,ejercicio_hasta:hasta,departamento:dep,surtido:document.getElementById('m-comp-sur')?.value||'',tipo:document.getElementById('m-comp-tipo')?.value||'',importe:parseFloat(document.getElementById('m-comp-imp')?.value)||0};
+  const obj={
+    ejercicio_desde:desde, ejercicio_hasta:hasta,
+    departamento:dep,
+    surtido:document.getElementById('m-comp-sur')?.value||'',
+    tipo:document.getElementById('m-comp-tipo')?.value||'',
+    importe:parseFloat(document.getElementById('m-comp-imp')?.value)||0,
+    fecha_realizacion:document.getElementById('m-comp-fecha-real')?.value||'',
+    estado:document.getElementById('m-comp-estado')?.value||'pendiente'
+  };
   if(id){const c=DB_COMPROMISOS.find(x=>x._id===id);if(c)Object.assign(c,obj);}
   else{obj._id=nextId(DB_COMPROMISOS);DB_COMPROMISOS.push(obj);}
   await saveCompromisos();writeActivity("compromisos");toast('✓ Compromiso guardado');closeModal();renderCompromisos();
@@ -2235,8 +2328,186 @@ async function importXL(){
 }
 
 // ══════════════════════════════════════════════════════
-//  MARCAS / PROVEEDORES
+//  CONFIGURACIÓN DE VISTA POR USUARIO
 // ══════════════════════════════════════════════════════
+const CONFIG_THEMES = {
+  azul:    {name:'Azul Clásico',  bg:'#F2F5F9', sur:'#FFFFFF', brd:'#D4DCE8', txt:'#18243A', mut:'#6878A0', acc:'#1558B0', grn:'#0A6E50', red:'#9B2020'},
+  verde:   {name:'Verde Bosque',  bg:'#F0F5F1', sur:'#FFFFFF', brd:'#C8DACC', txt:'#182818', mut:'#567060', acc:'#1A6B3A', grn:'#0A6E50', red:'#9B2020'},
+  oscuro:  {name:'Modo Oscuro',   bg:'#0F1117', sur:'#1C1F28', brd:'#2E3347', txt:'#E8ECF5', mut:'#7A85A8', acc:'#4D8AFF', grn:'#30C88A', red:'#F05A5A'},
+  gris:    {name:'Gris Neutro',   bg:'#F4F4F6', sur:'#FFFFFF', brd:'#DCDCE4', txt:'#1A1A2E', mut:'#707080', acc:'#4040A0', grn:'#2A7A4A', red:'#9B2020'},
+  calido:  {name:'Cálido Beige',  bg:'#F5F0EA', sur:'#FFFDF9', brd:'#E0D4C0', txt:'#2C2010', mut:'#857060', acc:'#8B4513', grn:'#2A6B3A', red:'#8B2020'},
+  marino:  {name:'Azul Marino',   bg:'#EEF2F8', sur:'#FFFFFF', brd:'#C4CEDF', txt:'#0D1F3C', mut:'#4A5E80', acc:'#0A3070', grn:'#0A5040', red:'#9B2020'},
+};
+const CONFIG_DENSITY = {
+  comodo:   {name:'Cómodo',    tdPad:'12px 14px', thPad:'10px 14px', fontSize:'13px', cardPad:'16px'},
+  normal:   {name:'Normal',   tdPad:'9px 13px',  thPad:'8px 13px',  fontSize:'12.5px', cardPad:'14px'},
+  compacto: {name:'Compacto', tdPad:'5px 10px',  thPad:'5px 10px',  fontSize:'11.5px', cardPad:'10px'},
+};
+const CONFIG_FONT = {
+  inter:    {name:'Inter',     css:"'Inter',system-ui,sans-serif"},
+  sistema:  {name:'Sistema',   css:'system-ui,sans-serif'},
+  mono:     {name:'Monospace', css:"'Courier New',monospace"},
+  serif:    {name:'Serif',     css:"Georgia,serif"},
+};
+
+function getConfigKey(){ return 'inasa_cfg_' + (currentUser?.name||'default'); }
+function loadUserConfig(){
+  try{ return JSON.parse(localStorage.getItem(getConfigKey())||'{}'); }catch(e){ return {}; }
+}
+function saveUserConfig(cfg){
+  localStorage.setItem(getConfigKey(), JSON.stringify(cfg));
+}
+
+function applyConfig(cfg={}){
+  const theme = CONFIG_THEMES[cfg.theme||'azul'];
+  const dens  = CONFIG_DENSITY[cfg.density||'normal'];
+  const font  = CONFIG_FONT[cfg.font||'inter'];
+  const root  = document.documentElement;
+  // Colores
+  Object.entries(theme).forEach(([k,v])=>{ if(k!=='name') root.style.setProperty('--'+k, v); });
+  // Fuente
+  root.style.setProperty('--fn', font.css);
+  document.body.style.fontFamily = font.css;
+  // Densidad — aplicar via style tag
+  let styleEl = document.getElementById('_cfg_density');
+  if(!styleEl){ styleEl=document.createElement('style'); styleEl.id='_cfg_density'; document.head.appendChild(styleEl); }
+  styleEl.textContent = `td{padding:${dens.tdPad}!important}th{padding:${dens.thPad}!important}body{font-size:${dens.fontSize}}`;
+  // Tamaño base de fuente
+  if(cfg.fontScale) document.documentElement.style.fontSize = cfg.fontScale + 'px';
+}
+
+function abrirConfiguracion(){
+  const cfg = loadUserConfig();
+  const html = `
+  <div style="position:fixed;inset:0;background:rgba(10,18,40,.6);z-index:9999;display:flex;align-items:center;justify-content:center" id="cfg-bg" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--sur);border-radius:16px;width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <!-- Header -->
+      <div style="padding:18px 24px;background:linear-gradient(135deg,var(--acc),var(--grn));color:#fff;border-radius:16px 16px 0 0;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px"><i class="ti ti-settings"></i> Configuración de vista</div>
+          <div style="font-size:11px;opacity:.8;margin-top:2px">Preferencias guardadas para <strong>${currentUser?.name||'este usuario'}</strong></div>
+        </div>
+        <button onclick="document.getElementById('cfg-bg').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center"><i class="ti ti-x"></i></button>
+      </div>
+
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:22px">
+
+        <!-- TEMA -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🎨 Tema de colores</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            ${Object.entries(CONFIG_THEMES).map(([k,t])=>`
+              <div onclick="previewTheme('${k}')" id="cfg-theme-${k}" style="border:2.5px solid ${(cfg.theme||'azul')===k?t.acc:'var(--brd)'};border-radius:10px;padding:10px;cursor:pointer;transition:.15s;background:${t.bg}">
+                <div style="display:flex;gap:4px;margin-bottom:6px">
+                  <div style="width:14px;height:14px;border-radius:50%;background:${t.acc}"></div>
+                  <div style="width:14px;height:14px;border-radius:50%;background:${t.grn}"></div>
+                  <div style="width:14px;height:14px;border-radius:50%;background:${t.mut}"></div>
+                  <div style="width:14px;height:14px;border-radius:50%;background:${t.sur};border:1px solid ${t.brd}"></div>
+                </div>
+                <div style="font-size:11px;font-weight:700;color:${t.txt}">${t.name}</div>
+                <div style="font-size:10px;color:${t.mut}">Aa</div>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- DENSIDAD -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">📐 Densidad de información</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            ${Object.entries(CONFIG_DENSITY).map(([k,d])=>`
+              <div onclick="selectCfg('density','${k}')" id="cfg-density-${k}" style="border:2.5px solid ${(cfg.density||'normal')===k?'var(--acc)':'var(--brd)'};border-radius:10px;padding:12px;cursor:pointer;text-align:center;background:${(cfg.density||'normal')===k?'var(--acc)':'var(--sur)'}">
+                <div style="font-size:13px;font-weight:700;color:${(cfg.density||'normal')===k?'#fff':'var(--txt)'}">${d.name}</div>
+                <div style="font-size:10px;color:${(cfg.density||'normal')===k?'rgba(255,255,255,.8)':'var(--mut)'};margin-top:3px">Filas ${k==='comodo'?'grandes':k==='compacto'?'pequeñas':'medianas'}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- FUENTE -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🔤 Tipografía</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+            ${Object.entries(CONFIG_FONT).map(([k,f])=>`
+              <div onclick="selectCfg('font','${k}')" id="cfg-font-${k}" style="border:2.5px solid ${(cfg.font||'inter')===k?'var(--acc)':'var(--brd)'};border-radius:10px;padding:10px;cursor:pointer;text-align:center;font-family:${f.css};background:${(cfg.font||'inter')===k?'#EEF5FC':'var(--sur)'}">
+                <div style="font-size:14px;font-weight:700;color:var(--txt)">Aa</div>
+                <div style="font-size:10px;color:var(--mut);margin-top:2px">${f.name}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- TAMAÑO -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🔡 Tamaño de texto</div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:11px;color:var(--mut)">A</span>
+            <input type="range" id="cfg-font-scale" min="13" max="18" step="1" value="${cfg.fontScale||15}" oninput="previewFontScale(this.value)" style="flex:1;accent-color:var(--acc)">
+            <span style="font-size:16px;color:var(--mut)">A</span>
+            <span id="cfg-scale-val" style="font-size:12px;font-weight:700;color:var(--acc);min-width:24px">${cfg.fontScale||15}px</span>
+          </div>
+        </div>
+
+        <!-- BOTONES -->
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--brd)">
+          <button onclick="resetConfig()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-size:12px;font-weight:600;color:var(--mut)"><i class="ti ti-rotate-clockwise"></i> Restaurar</button>
+          <button onclick="document.getElementById('cfg-bg').remove()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-size:12px;font-weight:600">Cancelar</button>
+          <button onclick="guardarConfig()" style="padding:8px 20px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-size:12px;font-weight:700"><i class="ti ti-check"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  window.__cfgTemp__ = {...cfg};
+}
+
+function previewTheme(k){
+  window.__cfgTemp__ = window.__cfgTemp__||{};
+  window.__cfgTemp__.theme = k;
+  applyConfig(window.__cfgTemp__);
+  // Update border selection
+  Object.keys(CONFIG_THEMES).forEach(t=>{
+    const el=document.getElementById('cfg-theme-'+t);
+    if(el) el.style.borderColor = t===k?CONFIG_THEMES[k].acc:'var(--brd)';
+  });
+}
+
+function selectCfg(key, val){
+  window.__cfgTemp__ = window.__cfgTemp__||{};
+  window.__cfgTemp__[key] = val;
+  applyConfig(window.__cfgTemp__);
+  // Update UI selection for density or font
+  const group = key==='density'?CONFIG_DENSITY:CONFIG_FONT;
+  Object.keys(group).forEach(k=>{
+    const el=document.getElementById('cfg-'+key+'-'+k);
+    if(!el) return;
+    const sel = k===val;
+    el.style.borderColor = sel?'var(--acc)':'var(--brd)';
+    el.style.background  = sel?(key==='density'?'var(--acc)':'#EEF5FC'):'var(--sur)';
+    const txt=el.querySelector('div');
+    if(txt&&key==='density') txt.style.color=sel?'#fff':'var(--txt)';
+  });
+}
+
+function previewFontScale(val){
+  document.getElementById('cfg-scale-val').textContent = val+'px';
+  window.__cfgTemp__ = window.__cfgTemp__||{};
+  window.__cfgTemp__.fontScale = parseInt(val);
+  applyConfig(window.__cfgTemp__);
+}
+
+function guardarConfig(){
+  const cfg = window.__cfgTemp__||{};
+  cfg.fontScale = parseInt(document.getElementById('cfg-font-scale')?.value||15);
+  saveUserConfig(cfg);
+  applyConfig(cfg);
+  document.getElementById('cfg-bg')?.remove();
+  toast('✓ Preferencias guardadas para '+currentUser?.name);
+}
+
+function resetConfig(){
+  window.__cfgTemp__ = {theme:'azul',density:'normal',font:'inter',fontScale:15};
+  applyConfig(window.__cfgTemp__);
+  document.getElementById('cfg-bg')?.remove();
+  abrirConfiguracion();
+}
 const MARCAS_DEFAULT = [
   'A.GASTRONOMIA ARTIGIANI','BONOMELLI','BORBONE','CAMPIELLO','CANNAMELA',
   'CAPUTO','CASA LOSITO','CHARCUTERIA','CHOCOLATES NAVIDAD','CONGELADO TRE MARIE',
@@ -2260,37 +2531,74 @@ async function saveMarcas(){
   try{ await window.storage.set(MARCAS_KEY,JSON.stringify(DB_MARCAS),true); }catch(e){}
 }
 
+let marcasVista = 'ambos'; // 'ambos' | 'ventas' | 'previstos'
+
 function renderMarcas(){
   const año=new Date().getFullYear();
-  const total=DB_MARCAS.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
+  const totalVentas=DB_MARCAS.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
+  const totalPrev=DB_MARCAS.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.previstos||{})[mes]||0),0),0);
+  const cumplTotal=totalPrev>0?Math.round(totalVentas/totalPrev*100):null;
+
   document.getElementById('content').innerHTML=`
     <div class="ph">
       <div class="pt"><i class="ti ti-rosette"></i>Marcas &amp; Proveedores</div>
-      <div style="display:flex;gap:8px">
-        <input class="fi" id="marca-search" placeholder="Buscar marca..." style="width:200px;padding:7px 12px" oninput="filterMarcas()">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input class="fi" id="marca-search" placeholder="Buscar marca..." style="width:180px;padding:7px 12px" oninput="filterMarcas()">
+        <button class="btn btn-sm btn-green" onclick="openMarcasXL('previstos')"><i class="ti ti-target"></i>Subir previstos</button>
+        <button class="btn btn-sm btn-green" onclick="openMarcasXL('ventas')"><i class="ti ti-chart-bar"></i>Subir ventas</button>
         <button class="btn btn-primary" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
       </div>
     </div>
-    <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kgrid" style="grid-template-columns:repeat(5,1fr)">
       <div class="kcard"><div class="kl">Total marcas</div><div class="kv">${DB_MARCAS.length}</div></div>
       <div class="kcard"><div class="kl">Activas</div><div class="kv" style="color:var(--grn)">${DB_MARCAS.filter(m=>m.activa!==false).length}</div></div>
-      <div class="kcard"><div class="kl">Facturación total</div><div class="kv" style="color:var(--grn)">€${Math.round(total).toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Año</div><div class="kv">${año}</div></div>
+      <div class="kcard"><div class="kl">Total Real</div><div class="kv" style="color:var(--grn)">€${Math.round(totalVentas).toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Total Previsto</div><div class="kv" style="color:var(--acc)">€${Math.round(totalPrev).toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Incremento</div><div class="kv" style="color:${cumplTotal===null?'var(--mut)':cumplTotal>=100?'var(--grn)':'var(--red)'}">${cumplTotal!==null?cumplTotal+'%':'—'}</div></div>
     </div>
-    <div class="card"><div class="tw">
-      <table>
-        <thead><tr>
-          <th>Marca / Proveedor</th>
-          ${MESES.map(m=>`<th style="text-align:right">${m}</th>`).join('')}
-          <th style="text-align:right">Total</th>
-          <th style="text-align:right">% Total</th>
-          <th></th>
-        </tr></thead>
+
+    <!-- Importador Excel -->
+    <div id="marcas-xl-panel" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:12px;padding:16px 20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px" id="marcas-xl-title"></div>
+      <div style="font-size:11px;color:var(--mut);margin-bottom:10px">Formato: <strong>PROVEEDORES · Total Ene · Total Feb · …</strong> o <strong>MARCA · Ene · Feb · …</strong></div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <input type="file" id="marcas-xl-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleMarcasXL(event)">
+        <button class="btn btn-sm" onclick="document.getElementById('marcas-xl-input').click()"><i class="ti ti-upload"></i>Seleccionar archivo</button>
+        <span id="marcas-xl-status" style="font-size:12px;color:var(--mut)">Sin archivo</span>
+        <button class="btn btn-sm" onclick="document.getElementById('marcas-xl-panel').style.display='none'" style="margin-left:auto">Cancelar</button>
+      </div>
+      <div id="marcas-xl-prev" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" style="overflow-x:auto"><div class="tw">
+      <table id="marcas-table">
+        <thead>
+          <tr>
+            <th rowspan="2" style="min-width:160px">PROVEEDOR</th>
+            ${MESES.map(m=>`<th colspan="2" style="text-align:center;border-left:2px solid var(--brd)">${m}</th>`).join('')}
+            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd)">TOTAL ANUAL</th>
+            <th rowspan="2"></th>
+          </tr>
+          <tr>
+            ${MESES.map(()=>`<th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600;border-left:2px solid var(--brd)">PREVISTO</th><th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600">REAL</th>`).join('')}
+            <th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600;border-left:2px solid var(--brd)">PREVISTO</th>
+            <th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600">REAL</th>
+            <th style="text-align:right;font-size:10px;color:var(--mut);font-weight:600">INCR.</th>
+          </tr>
+        </thead>
         <tbody id="marcas-tbody"></tbody>
         <tfoot id="marcas-tfoot"></tfoot>
       </table>
     </div></div>`;
   renderMarcasTable(DB_MARCAS);
+}
+
+function openMarcasXL(campo){
+  window.__marcasXLCampo__ = campo;
+  const panel=document.getElementById('marcas-xl-panel');
+  const title=document.getElementById('marcas-xl-title');
+  if(title) title.innerHTML=`<i class="ti ti-file-spreadsheet"></i> Subir ${campo==='previstos'?'Previstos Neto':'Ventas Reales'} desde Excel`;
+  if(panel) panel.style.display='block';
 }
 
 function filterMarcas(){
@@ -2299,53 +2607,138 @@ function filterMarcas(){
   renderMarcasTable(list);
 }
 
+function handleMarcasXL(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const status=document.getElementById('marcas-xl-status');
+  const prev=document.getElementById('marcas-xl-prev');
+  status.textContent='⏳ Cargando...';
+  ensureXLSX().then(()=>{
+    const reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const rawRows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        // Encontrar fila cabecera — busca la que tiene nombres de mes
+        let hdrIdx=0;
+        for(let i=0;i<Math.min(8,rawRows.length);i++){
+          const r=rawRows[i].map(c=>normMarcaH(c));
+          if(r.some(c=>MESES.some(m=>c.includes(m.toLowerCase()))||['ene','feb','mar','abr','may','jun'].some(x=>c.includes(x)))){hdrIdx=i;break;}
+        }
+        const hdrs=rawRows[hdrIdx].map(c=>String(c||'').trim());
+        const dataRows=rawRows.slice(hdrIdx+1).filter(r=>String(r[0]||'').trim()!=='');
+        const campo=window.__marcasXLCampo__||'previstos';
+        const resultados=[];
+        dataRows.forEach(row=>{
+          const nombre=String(row[0]||'').trim(); if(!nombre||/total/i.test(nombre)) return;
+          const mData={};
+          MESES.forEach((mes,idx)=>{
+            // Buscar columna: primero exact, luego contains mes abreviado
+            const mesLow=mes.toLowerCase();
+            let colIdx=hdrs.findIndex((h,ci)=>ci>0&&normMarcaH(h)===mesLow);
+            if(colIdx<0) colIdx=hdrs.findIndex((h,ci)=>ci>0&&normMarcaH(h).replace(/^(total|imp|real|prev|neto)/,'').trim()===mesLow);
+            if(colIdx<0) colIdx=hdrs.findIndex((h,ci)=>ci>0&&normMarcaH(h).includes(mesLow));
+            // También por posición (columna idx+1 si no hay headers de mes)
+            if(colIdx<0&&row[idx+1]!=='') colIdx=idx+1;
+            if(colIdx>=0){
+              const raw=String(row[colIdx]||'').replace(/\./g,'').replace(',','.').replace(/[^0-9.-]/g,'');
+              const v=parseFloat(raw);
+              if(!isNaN(v)&&v>0) mData[mes]=v;
+            }
+          });
+          if(Object.keys(mData).length) resultados.push({nombre,mData});
+        });
+        if(!resultados.length){prev.innerHTML='<div style="color:var(--red);font-size:12px">⚠ Sin datos válidos</div>';return;}
+        window.__marcasXLData__=resultados;
+        prev.innerHTML=`<div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:12px;font-size:12px">
+          <div style="font-weight:700;color:var(--grn);margin-bottom:6px">✓ ${resultados.length} marcas — ${campo}</div>
+          ${resultados.slice(0,5).map(r=>`<div style="color:var(--mut)">· ${r.nombre}: ${Object.entries(r.mData).slice(0,4).map(([m,v])=>m+' €'+Math.round(v).toLocaleString()).join(' · ')}</div>`).join('')}
+          ${resultados.length>5?`<div style="color:var(--mut)">...y ${resultados.length-5} más</div>`:''}
+          <button class="btn btn-green btn-sm" style="margin-top:10px" onclick="importarMarcasXL()"><i class="ti ti-download"></i>Importar ${resultados.length} marcas en ${campo}</button>
+        </div>`;
+        status.textContent=`✓ ${resultados.length} marcas`;
+      }catch(err){prev.innerHTML='<div style="color:var(--red)">⚠ Error: '+err.message+'</div>';}
+    };
+    reader.readAsArrayBuffer(file);
+  }).catch(err=>{status.textContent='⚠ Error cargando XLSX: '+err.message;});
+}
+
+function normMarcaH(s){
+  return String(s||'').toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e')
+    .replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/[^a-z0-9]/g,'');
+}
+
+async function importarMarcasXL(){
+  const resultados=window.__marcasXLData__; if(!resultados) return;
+  const campo=window.__marcasXLCampo__||'previstos';
+  let matched=0,created=0;
+  resultados.forEach(({nombre,mData})=>{
+    let m=DB_MARCAS.find(x=>x.nombre.toUpperCase()===nombre.toUpperCase());
+    if(!m) m=DB_MARCAS.find(x=>x.nombre.toUpperCase().includes(nombre.toUpperCase())||nombre.toUpperCase().includes(x.nombre.toUpperCase()));
+    if(!m){
+      const nextId=DB_MARCAS.length?Math.max(...DB_MARCAS.map(x=>x.id))+1:1;
+      m={id:nextId,nombre,activa:true,notas:'',ventas:{},previstos:{}};
+      DB_MARCAS.push(m); created++;
+    } else { matched++; }
+    if(!m[campo]) m[campo]={};
+    Object.assign(m[campo],mData);
+  });
+  await saveMarcas();
+  document.getElementById('marcas-xl-panel').style.display='none';
+  toast(`✓ ${matched} actualizadas${created?` · ${created} creadas`:''} en ${campo}`);
+  renderMarcas();
+}
+
 function renderMarcasTable(list){
   const tbody=document.getElementById('marcas-tbody');
   const tfoot=document.getElementById('marcas-tfoot');
   if(!tbody)return;
-  const grandTotal=DB_MARCAS.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
+  const fmtE=v=>v>0?parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  const fmtPct=v=>v!==null?v.toFixed(2).replace('.',',')+' %':'—';
 
   tbody.innerHTML=list.map(m=>{
-    const tot=MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0);
-    const pct=grandTotal>0?(tot/grandTotal*100).toFixed(1):'0.0';
-    const pctN=grandTotal>0?Math.round(tot/grandTotal*100):0;
+    const ventas=m.ventas||{};
+    const prev=m.previstos||{};
+    const totVentas=MESES.reduce((s,mes)=>s+(ventas[mes]||0),0);
+    const totPrev=MESES.reduce((s,mes)=>s+(prev[mes]||0),0);
+    const incr=totPrev>0?((totVentas-totPrev)/totPrev*100):null;
+    const incrColor=incr===null?'var(--mut)':incr>=0?'var(--grn)':'var(--red)';
     return`<tr style="opacity:${m.activa===false?0.45:1}">
-      <td>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-weight:700;color:var(--txt)">${m.nombre}</span>
-          ${m.activa===false?'<span style="font-size:10px;background:#F1F5F9;color:#475569;padding:1px 6px;border-radius:8px">inactiva</span>':''}
-        </div>
-        ${m.notas?`<div style="font-size:11px;color:var(--mut);margin-top:1px">${m.notas}</div>`:''}
+      <td style="font-weight:700;color:var(--txt);white-space:nowrap">
+        ${m.nombre}${m.activa===false?` <span style="font-size:10px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:6px">inactiva</span>`:''}
+        ${m.notas?`<div style="font-size:10px;color:var(--mut);font-weight:400">${m.notas}</div>`:''}
       </td>
       ${MESES.map(mes=>{
-        const v=m.ventas[mes]||0;
-        return`<td style="text-align:right;color:var(--mut);font-size:11.5px;cursor:pointer" onclick="editMarcaMes(${m.id},'${mes}')" title="Editar ${mes}">${v>0?'€'+parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>`;
+        const vp=prev[mes]||0;
+        const vr=ventas[mes]||0;
+        return`<td style="text-align:right;font-size:11px;color:var(--acc);cursor:pointer;border-left:2px solid var(--brd)" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')" title="Previsto ${mes}">${fmtE(vp)}</td>
+               <td style="text-align:right;font-size:11px;color:${vr>0&&vp>0?(vr>=vp?'var(--grn)':'var(--red)'):'var(--mut)'};cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')" title="Real ${mes}">${fmtE(vr)}</td>`;
       }).join('')}
-      <td style="text-align:right;font-weight:700;color:${tot>0?'var(--grn)':'var(--mut)'}">${tot>0?'€'+Math.round(tot).toLocaleString():'—'}</td>
-      <td style="text-align:right;padding-right:8px">
-        ${tot>0?`<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
-          <div style="width:60px;height:6px;background:#EBF0F7;border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${pctN}%;background:var(--acc);border-radius:3px"></div>
-          </div>
-          <span style="font-size:11px;color:var(--mut);min-width:32px;text-align:right">${pct}%</span>
-        </div>`:'—'}
-      </td>
-      <td style="text-align:right">
+      <td style="text-align:right;font-size:11px;color:var(--acc);font-weight:600;border-left:2px solid var(--brd)">${fmtE(totPrev)}</td>
+      <td style="text-align:right;font-size:11px;color:var(--grn);font-weight:600">${fmtE(totVentas)}</td>
+      <td style="text-align:right;font-size:11px;font-weight:700;color:${incrColor}">${fmtPct(incr)}</td>
+      <td style="text-align:right;white-space:nowrap">
         <button class="bico e" onclick="editMarca(${m.id})" title="Editar"><i class="ti ti-pencil"></i></button>
       </td>
     </tr>`;
   }).join('');
 
-  // Footer totals
-  const mesTotal=mes=>list.reduce((a,m)=>a+(m.ventas[mes]||0),0);
-  const listTotal=list.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas[mes]||0),0),0);
-  tfoot.innerHTML=`<tr style="background:#EEF5EC">
-    <td style="font-weight:700">TOTAL (${list.length} marcas)</td>
-    ${MESES.map(mes=>{const v=mesTotal(mes);return`<td style="text-align:right;font-weight:700;font-size:11.5px">${v>0?'€'+parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>`;}).join('')}
-    <td style="text-align:right;font-weight:800;color:var(--grn)">€${Math.round(listTotal).toLocaleString()}</td>
-    <td colspan="2"></td>
+  // Footer
+  const sumVentas=mes=>list.reduce((a,m)=>a+((m.ventas||{})[mes]||0),0);
+  const sumPrev=mes=>list.reduce((a,m)=>a+((m.previstos||{})[mes]||0),0);
+  const totV=MESES.reduce((a,m)=>a+sumVentas(m),0);
+  const totP=MESES.reduce((a,m)=>a+sumPrev(m),0);
+  const incrT=totP>0?((totV-totP)/totP*100):null;
+  const incrColor=incrT===null?'var(--mut)':incrT>=0?'var(--grn)':'var(--red)';
+  tfoot.innerHTML=`<tr style="background:#EEF5EC;font-weight:700">
+    <td>TOTAL (${list.length})</td>
+    ${MESES.map(mes=>`<td style="text-align:right;font-size:11px;color:var(--acc);border-left:2px solid var(--brd)">${fmtE(sumPrev(mes))}</td><td style="text-align:right;font-size:11px;color:var(--grn)">${fmtE(sumVentas(mes))}</td>`).join('')}
+    <td style="text-align:right;color:var(--acc);border-left:2px solid var(--brd)">${fmtE(totP)}</td>
+    <td style="text-align:right;color:var(--grn)">${fmtE(totV)}</td>
+    <td style="text-align:right;color:${incrColor}">${fmtPct(incrT)}</td>
+    <td></td>
   </tr>`;
 }
+
 
 function editMarca(id){
   const m = id ? DB_MARCAS.find(x=>x.id===id) : null;
@@ -2406,22 +2799,25 @@ async function deleteMarca(id){
   toast('✓ Marca eliminada');
 }
 
-function editMarcaMes(marcaId,mes){
-  const m=DB_MARCAS.find(x=>x.id===marcaId);if(!m)return;
-  const vActual=m.ventas[mes]||0;
-  const año=new Date().getFullYear();
+
+// ══════════════════════════════════════════════════════
+
+function editMarcaMesCampo(marcaId, mes, campo){
+  const m=DB_MARCAS.find(x=>x.id===marcaId); if(!m) return;
+  const vActual=((m[campo]||{})[mes])||0;
+  const label=campo==='previstos'?'Previsto Neto':'Real Neto';
   const html=`
     <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center" id="marca-mes-bg" onclick="if(event.target===this)this.remove()">
       <div style="background:var(--sur);border-radius:14px;padding:28px 32px;min-width:320px;box-shadow:0 8px 40px rgba(0,0,0,.25)">
         <div style="font-size:15px;font-weight:700;margin-bottom:2px">${m.nombre}</div>
-        <div style="font-size:12px;color:var(--mut);margin-bottom:18px">Facturación — <strong>${mes} ${año}</strong></div>
+        <div style="font-size:12px;color:var(--mut);margin-bottom:18px">${label} — <strong>${mes} ${new Date().getFullYear()}</strong></div>
         <label style="font-size:12px;font-weight:600;color:var(--mut);display:block;margin-bottom:6px">Importe (€)</label>
         <input id="marca-mes-val" type="number" step="0.01" min="0" value="${vActual.toFixed(2)}"
           style="width:100%;padding:10px 12px;border:1.5px solid var(--brd);border-radius:8px;font-size:16px;font-weight:700;background:var(--sur);color:var(--txt);box-sizing:border-box;margin-bottom:18px"
-          onkeydown="if(event.key==='Enter')saveMarcaMes(${marcaId},'${mes}')">
+          onkeydown="if(event.key==='Enter')saveMarcaMesCampo(${marcaId},'${mes}','${campo}')">
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button onclick="document.getElementById('marca-mes-bg').remove()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-weight:600">Cancelar</button>
-          <button onclick="saveMarcaMes(${marcaId},'${mes}')" style="padding:8px 18px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700">Guardar</button>
+          <button onclick="saveMarcaMesCampo(${marcaId},'${mes}','${campo}')" style="padding:8px 18px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700">Guardar</button>
         </div>
       </div>
     </div>`;
@@ -2429,18 +2825,17 @@ function editMarcaMes(marcaId,mes){
   setTimeout(()=>document.getElementById('marca-mes-val')?.select(),50);
 }
 
-async function saveMarcaMes(marcaId,mes){
+async function saveMarcaMesCampo(marcaId, mes, campo){
   const val=parseFloat(document.getElementById('marca-mes-val')?.value)||0;
-  const m=DB_MARCAS.find(x=>x.id===marcaId);if(!m)return;
-  if(!m.ventas)m.ventas={};
-  m.ventas[mes]=val;
+  const m=DB_MARCAS.find(x=>x.id===marcaId); if(!m) return;
+  if(!m[campo]) m[campo]={};
+  m[campo][mes]=val;
   document.getElementById('marca-mes-bg')?.remove();
   await saveMarcas();
   renderMarcasTable(DB_MARCAS);
-  toast(`✓ ${m.nombre} — ${mes}: €${val.toLocaleString()}`);
+  toast(`✓ ${m.nombre} — ${mes} ${campo==='previstos'?'previsto':'real'}: €${val.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}`);
 }
 
-// ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
 let bulkData = [];   // {cliente, cliId, mes, año, importe, unidades, producto, descripcion}
 let bulkUnmatched = [];
@@ -3794,6 +4189,7 @@ function entrarComoAdmin(e) {
   localStorage.setItem(LPREF_USER_NAME, 'Administrador');
   document.getElementById('user-select-bg').classList.remove('on');
   updateUserChip();
+  applyConfig(loadUserConfig());
   bootPresence();
 }
 
@@ -3823,6 +4219,7 @@ function confirmUserSelection() {
   localStorage.setItem(LPREF_USER_NAME, t.nombre);
   document.getElementById('user-select-bg').classList.remove('on');
   updateUserChip();
+  applyConfig(loadUserConfig());
   bootPresence();
 }
 
