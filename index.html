@@ -3503,23 +3503,48 @@ function handlePromoXL(ev) {
 async function importarPromosXL() {
   const nuevas = window.__promoImportBuffer__;
   if (!nuevas || !nuevas.length) { toast('⚠ No hay datos para importar'); return; }
-  // Avoid duplicates by ean+cliente+mes+quincena
-  let añadidas = 0, omitidas = 0;
+
+  let añadidas = 0, omitidas = 0, duplicadas = [];
+
   nuevas.forEach(p => {
-    const existe = DB_PROMOS.some(x =>
-      nH(x.ean)      === nH(p.ean) &&
-      nH(x.cliente)  === nH(p.cliente) &&
-      nH(x.mes)      === nH(p.mes) &&
-      nH(x.quincena) === nH(p.quincena)
-    );
-    if (existe) { omitidas++; }
-    else        { DB_PROMOS.push(p); añadidas++; }
+    const tieneEAN = p.ean && String(p.ean).trim();
+    let existe;
+    if(tieneEAN){
+      // Con EAN: comparar ean+cliente+mes+quincena
+      existe = DB_PROMOS.some(x =>
+        nH(x.ean)      === nH(p.ean) &&
+        nH(x.cliente)  === nH(p.cliente) &&
+        nH(x.mes)      === nH(p.mes) &&
+        nH(x.quincena) === nH(p.quincena)
+      );
+    } else {
+      // Sin EAN: comparar cliente+mes+marca+producto+quincena
+      existe = DB_PROMOS.some(x =>
+        nH(x.cliente)  === nH(p.cliente) &&
+        nH(x.mes)      === nH(p.mes) &&
+        nH(x.marca)    === nH(p.marca) &&
+        nH(x.producto) === nH(p.producto) &&
+        nH(x.quincena) === nH(p.quincena)
+      );
+    }
+    if(existe){ omitidas++; duplicadas.push(`${p.cliente} · ${p.mes} · ${p.marca||p.producto||'—'}`); }
+    else { DB_PROMOS.push(p); añadidas++; }
   });
+
   window.__promoImportBuffer__ = null;
   await savePromos();
   closeModal();
   renderView(currentView);
-  toast(`✓ ${añadidas} promociones importadas${omitidas ? ` · ${omitidas} duplicadas omitidas` : ''}`);
+
+  if(duplicadas.length){
+    const msg = duplicadas.length<=5
+      ? `\n\nDuplicadas omitidas:\n${duplicadas.join('\n')}`
+      : `\n\n${duplicadas.length} duplicadas omitidas`;
+    toast(`✓ ${añadidas} importadas · ${omitidas} duplicadas omitidas`);
+    if(omitidas>0) setTimeout(()=>alert(`✓ ${añadidas} promociones importadas.\n⚠ ${omitidas} omitidas por ser duplicadas:${msg}`),300);
+  } else {
+    toast(`✓ ${añadidas} promociones importadas`);
+  }
 }
 
 // ══════════════════════════════════════════════════════
