@@ -1423,7 +1423,7 @@ function renderCompromisosTable(){
 function openCompromisoModal(id){
   const c=id!=null?DB_COMPROMISOS.find(x=>x._id===id)||{}:{};
   // Clientes para autocompletado
-  const clientes=(DB_CLI||[]).map(cl=>cl.nombre||'').filter(Boolean).sort((a,b)=>a.localeCompare(b,'es'));
+  const clientes=(DB.clientes||[]).map(cl=>cl.nombre||'').filter(Boolean).sort((a,b)=>a.localeCompare(b,'es'));
   const clienteOpts=clientes.map(n=>`<option value="${n}">`).join('');
   document.getElementById('mttl').innerHTML='<i class="ti ti-file-check"></i>'+(id!=null?'Editar':'Nuevo')+' Compromiso';
   document.getElementById('mbody').innerHTML=`
@@ -1458,7 +1458,7 @@ function loadCompDeps(preselect){
   const sel=document.getElementById('m-comp-dep');
   if(!sel) return;
   const nombre=(document.getElementById('m-comp-cli')?.value||'').trim();
-  const cli=(DB_CLI||[]).find(c=>(c.nombre||'').trim()===nombre);
+  const cli=(DB.clientes||[]).find(c=>(c.nombre||'').trim()===nombre);
   const deps=(cli?.departamentos||[]).filter(d=>d.trim());
   if(deps.length){
     sel.innerHTML=`<option value="">— seleccionar —</option>`+deps.map(d=>`<option value="${d}"${d===(preselect||sel.dataset.prev||'')?'selected':''}>${d}</option>`).join('');
@@ -1501,6 +1501,9 @@ async function saveTrabajadores(){
 const MESES_LARGOS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 function renderTrabajadores(){
+  const loggedTrab = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
+  const isAdmin = currentUser?.name==='Administrador';
+  const isJefeGlobal = loggedTrab?.es_jefe_dep;
   const depts=[...new Set(DB_TRABAJADORES.map(t=>t.departamento).filter(Boolean))].sort();
   const now=new Date();
   const mesVis=parseInt(parseInt(localStorage.getItem(LPREF_VAC_MES)||now.getMonth()));
@@ -1508,25 +1511,22 @@ function renderTrabajadores(){
     <div class="ph"><div class="pt"><i class="ti ti-id-badge"></i>Trabajadores & Vacaciones</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="refreshTrabajadores()"><i class="ti ti-refresh"></i>Refrescar</button>
-        <button class="btn btn-primary" onclick="openTrabajadorModal()"><i class="ti ti-plus"></i>Nuevo trabajador</button>
+        ${isAdmin?`<button class="btn btn-primary" onclick="openTrabajadorModal()"><i class="ti ti-plus"></i>Nuevo trabajador</button>`:''}
       </div>
     </div>
 
     ${(()=>{
-      // Panel de solicitudes pendientes — visible para jefes de dep o admin
-      const loggedUser = DB_TRABAJADORES.find(t=>t.nombre===currentUser?.name);
-      const isJefe = loggedUser?.es_jefe_dep || currentUser?.name==='Administrador';
+      const isJefe = loggedTrab?.es_jefe_dep || isAdmin;
       const pendientes = [];
       DB_TRABAJADORES.forEach(t=>{
         (t.vacaciones||[]).forEach((v,i)=>{
           if(v.estado==='pendiente'){
-            // Jefe ve solo su depto, admin ve todos
-            const puedeVer = currentUser?.name==='Administrador' || (isJefe && loggedUser?.departamento===t.departamento);
+            const puedeVer = isAdmin || (isJefe && loggedTrab?.departamento===t.departamento);
             if(puedeVer) pendientes.push({t,v,i});
           }
         });
       });
-      if(!isJefe && currentUser?.name!=='Administrador') return '';
+      if(!isJefe && !isAdmin) return '';
       return`<div class="card" style="margin-bottom:18px;border-color:${pendientes.length?'#FCD34D':'var(--brd)'}">
         <div class="ch" style="background:${pendientes.length?'#FFFBEB':'#FAFBFD'}">
           <div class="ct"><i class="ti ti-shield-check" style="color:${pendientes.length?'var(--amb)':'var(--grn)'}"></i>
@@ -1570,10 +1570,17 @@ function renderTrabajadores(){
         const list=dept?DB_TRABAJADORES.filter(t=>t.departamento===dept):DB_TRABAJADORES;
         return list.length?list.map(t=>{
           const p=t.permisos||{};
-          const allTrue=PERM_TABS.every(x=>p[x.k]!==false);
-          const badges=allTrue
-            ?`<span style="font-size:10px;background:#D1FAE5;color:#059669;padding:2px 8px;border-radius:10px;font-weight:700">Acceso total</span>`
-            :PERM_TABS.filter(x=>p[x.k]!==false).map(x=>`<span title="${x.k}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;background:#EEF5FC;color:var(--acc);font-size:11px"><i class="ti ${x.i}"></i></span>`).join('') || `<span style="font-size:10px;color:var(--mut)">Sin acceso</span>`;
+          const allRw=Object.values(p).every(v=>v!=='ro')&&Object.keys(p).length>0;
+          const badges=Object.keys(p).length===0
+            ?`<span style="font-size:10px;background:#D1FAE5;color:#059669;padding:2px 8px;border-radius:10px;font-weight:700">Escritura total</span>`
+            :Object.entries(p).some(([,v])=>v==='ro')
+              ?`<span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:10px;font-weight:700"><i class="ti ti-eye"></i> Lectura parcial</span>`
+              :`<span style="font-size:10px;background:#D1FAE5;color:#059669;padding:2px 8px;border-radius:10px;font-weight:700">Escritura total</span>`;
+          // ¿Puede editar esta fila?
+          const esMiPerfil = currentUser?.name===t.nombre;
+          const esDeJefe = isJefeGlobal && loggedTrab?.departamento===t.departamento;
+          const puedeEditar = isAdmin || esMiPerfil || esDeJefe;
+          const puedeEliminar = isAdmin;
           return`<tr>
           <td><strong>${t.nombre||''}</strong></td>
           <td style="color:var(--mut)">${t.departamento||''}</td>
@@ -1582,8 +1589,8 @@ function renderTrabajadores(){
           <td>${t.es_jefe_dep?'<span style="font-size:10px;background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:10px;font-weight:700"><i class="ti ti-shield-check"></i> Jefe dep.</span>':''}</td>
           <td style="white-space:nowrap;max-width:200px"><div style="display:flex;flex-wrap:wrap;gap:3px">${badges}</div></td>
           <td style="white-space:nowrap">
-            <button class="bico e" onclick="openTrabajadorModal(${t._id})" title="Editar"><i class="ti ti-pencil"></i></button>
-            <button class="bico d" onclick="deleteTrabajador(${t._id})"><i class="ti ti-trash"></i></button>
+            ${puedeEditar?`<button class="bico e" onclick="openTrabajadorModal(${t._id})" title="Editar"><i class="ti ti-pencil"></i></button>`:''}
+            ${puedeEliminar?`<button class="bico d" onclick="deleteTrabajador(${t._id})"><i class="ti ti-trash"></i></button>`:''}
           </td>
         </tr>`;}).join(''):'<tr><td colspan="7" class="nodata">Sin trabajadores en este departamento.</td></tr>';
       })()}</tbody>
@@ -1702,15 +1709,18 @@ function openTrabajadorModal(id){
     {key:'trabajadores',label:'Trabajadores', icon:'ti-id-badge'},
   ];
   const perms = t.permisos || {};
-  document.getElementById('mttl').innerHTML='<i class="ti ti-id-badge"></i>'+(id!=null?'Editar':'Nuevo')+' Trabajador';
+  const esPropioPerf = id!=null && currentUser?.name===t.nombre;
+  const soloAdmin = currentUser?.name==='Administrador';
+  const ro = esPropioPerf && !soloAdmin; // campos bloqueados si edita su propio perfil (no admin)
+  document.getElementById('mttl').innerHTML='<i class="ti ti-id-badge"></i>'+(id!=null?(esPropioPerf?'Mi perfil':'Editar'):'Nuevo')+' Trabajador';
   document.getElementById('mbody').innerHTML=`
     <input type="hidden" id="m-trab-id" value="${t._id||''}">
     <div class="fr">
-      <div class="fg"><div class="fl">Nombre *</div><input class="fi" id="m-trab-nom" value="${t.nombre||''}" placeholder="Nombre completo"></div>
-      <div class="fg"><div class="fl">Departamento</div><input class="fi" id="m-trab-dep" value="${t.departamento||''}" placeholder="Departamento"></div>
+      <div class="fg"><div class="fl">Nombre *</div><input class="fi" id="m-trab-nom" value="${t.nombre||''}" placeholder="Nombre completo" ${ro?'readonly style="opacity:.6;background:#F3F6FB"':''}></div>
+      <div class="fg"><div class="fl">Departamento</div><input class="fi" id="m-trab-dep" value="${t.departamento||''}" placeholder="Departamento" ${ro?'readonly style="opacity:.6;background:#F3F6FB"':''}></div>
     </div>
     <div class="fr">
-      <div class="fg"><div class="fl">Puesto</div><input class="fi" id="m-trab-pue" value="${t.puesto||''}" placeholder="Cargo"></div>
+      <div class="fg"><div class="fl">Puesto</div><input class="fi" id="m-trab-pue" value="${t.puesto||''}" placeholder="Cargo" ${ro?'readonly style="opacity:.6;background:#F3F6FB"':''}></div>
       <div class="fg"><div class="fl">Email</div><input class="fi" id="m-trab-email" value="${t.email||''}" placeholder="correo@empresa.com"></div>
     </div>
     <div class="fg"><div class="fl">Teléfono</div><input class="fi" id="m-trab-tel" value="${t.tel||''}" placeholder="+34 000 000 000"></div>
@@ -1719,14 +1729,14 @@ function openTrabajadorModal(id){
         <input class="fi" id="m-trab-pwd" type="password" value="${t.password||''}" placeholder="Contraseña (mín. 4 caracteres)" autocomplete="new-password">
         <div style="font-size:11px;color:var(--mut);margin-top:4px">Si se deja vacía, el usuario podrá entrar sin contraseña.</div>
       </div>
-      <div class="fg" style="justify-content:flex-end">
+      ${soloAdmin?`<div class="fg" style="justify-content:flex-end">
         <div class="fl">Rol</div>
         <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1.5px solid var(--brd);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-top:4px">
           <input type="checkbox" id="m-trab-jefe" ${t.es_jefe_dep?'checked':''}>
           <i class="ti ti-shield-check" style="color:var(--acc)"></i> Jefe de departamento
         </label>
         <div style="font-size:11px;color:var(--mut);margin-top:4px">Puede validar vacaciones de su departamento.</div>
-      </div>
+      </div>`:'<input type="hidden" id="m-trab-jefe-hidden">'}
     </div>
     ${currentUser?.name==='Administrador' ? `<div style="margin-top:16px;border-top:1px solid var(--brd);padding-top:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -2469,6 +2479,18 @@ function renderMarcas(){
     <div id="marcas-totales"></div>`;
   renderMarcasTable(DB_MARCAS.filter(m=>m.id));
   renderSobrestock();
+  // Sincronizar barra de desplazamiento superior con la tabla
+  requestAnimationFrame(()=>{
+    const scr=document.getElementById('marcas-scroll');
+    const top=document.getElementById('marcas-top-scroll');
+    const inner=document.getElementById('marcas-top-inner');
+    if(!scr||!top||!inner) return;
+    const tbl=scr.querySelector('table');
+    if(tbl) inner.style.width=tbl.scrollWidth+'px';
+    let syncing=false;
+    scr.addEventListener('scroll',()=>{if(!syncing){syncing=true;top.scrollLeft=scr.scrollLeft;syncing=false;}});
+    top.addEventListener('scroll',()=>{if(!syncing){syncing=true;scr.scrollLeft=top.scrollLeft;syncing=false;}});
+  });
 }
 
 function openMarcasXL(){
@@ -2596,7 +2618,8 @@ function renderMarcasTable(list){
   const acPct=acP>0?acV/acP*100:null;
 
   el.innerHTML=`<div style="background:#fff;border:1.5px solid #D4DCE8;border-radius:10px;overflow:clip;margin-bottom:8px">
-    <div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 210px)">
+    <div id="marcas-top-scroll" style="overflow-x:auto;overflow-y:hidden;height:12px;border-bottom:1px solid #D4DCE8;background:#F7F9FD"><div id="marcas-top-inner" style="height:1px"></div></div>
+    <div id="marcas-scroll" style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 222px)">
     <table style="border-collapse:collapse;width:100%;font-size:11px">
       <thead>
         <tr>
