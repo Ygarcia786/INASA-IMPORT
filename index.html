@@ -2265,7 +2265,7 @@ async function importXL(){
 //  MARCAS / PROVEEDORES
 // ══════════════════════════════════════════════════════
 const MARCAS_DEFAULT = [
-  'A.GASTRONOMIA ARTIGIANI','BONOMELLI','BORBONE','CAMPIELLO','CANNAMELA',
+  'A.GASTRONOMIA','ARTIGIANI','BONOMELLI','BORBONE','CAMPIELLO','CANNAMELA',
   'CAPUTO','CASA LOSITO','CHARCUTERIA','CHOCOLATES NAVIDAD','CONGELADO TRE MARIE',
   'CREMONINI','CUORE','DOLC AMBROSIANA','EVERTON','FREDDI','GAMA NO NAVIDAD',
   'GRAND CAROB','LA CASA DEI PASTICCINI','LORIANA','MATILDE VICENZI','MESSORI',
@@ -2343,17 +2343,20 @@ function renderMarcas(){
       <table id="marcas-table">
         <thead>
           <tr>
-            <th rowspan="2" style="width:20px;padding:3px 4px"></th>
-            <th rowspan="2" style="width:150px;font-size:10px;padding:4px 6px">PROVEEDOR</th>
-            ${MESES.map(m=>`<th colspan="3" style="text-align:center;border-left:1.5px solid var(--brd);font-size:9px;padding:2px 4px;min-width:90px">${m}</th>`).join('')}
-            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd);font-size:9px;padding:2px 4px;min-width:90px">TOTAL</th>
-            <th rowspan="2" style="width:24px"></th>
+            <th rowspan="2" style="width:22px;padding:3px 4px;border-bottom:0.5px solid var(--brd)"></th>
+            <th rowspan="2" style="min-width:140px;font-size:11px;padding:6px 10px;text-align:left;border-bottom:0.5px solid var(--brd)">PROVEEDOR</th>
+            ${MESES.map(m=>`<th colspan="3" style="text-align:center;border-left:1.5px solid var(--brd);font-size:10px;padding:5px 4px;font-weight:600;letter-spacing:.3px">${m}</th>`).join('')}
+            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd);font-size:10px;padding:5px 4px;font-weight:600;background:#EEF5FC;color:var(--acc)">TOTAL</th>
+            <th rowspan="2" style="width:26px;border-bottom:0.5px solid var(--brd)"></th>
           </tr>
           <tr>
-            ${MESES.map(()=>`<th style="text-align:right;font-size:8px;padding:2px 3px;border-left:1.5px solid var(--brd);color:var(--acc);width:30px">PREV</th><th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--grn);width:30px">REAL</th><th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--mut);width:30px">%</th>`).join('')}
-            <th style="text-align:right;font-size:8px;padding:2px 3px;border-left:2px solid var(--brd);color:var(--acc);width:35px">PREV</th>
-            <th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--grn);width:35px">REAL</th>
-            <th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--mut);width:30px">%</th>
+            ${MESES.map(()=>`
+              <th style="text-align:right;font-size:9px;padding:3px 5px;border-left:1.5px solid var(--brd);color:var(--acc);font-weight:600;background:#F7F9FD">PREV</th>
+              <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--grn);font-weight:600;background:#F7F9FD">REAL</th>
+              <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--mut);font-weight:600;background:#F7F9FD">%</th>`).join('')}
+            <th style="text-align:right;font-size:9px;padding:3px 5px;border-left:2px solid var(--brd);color:var(--acc);font-weight:600;background:#EEF5FC">PREV</th>
+            <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--grn);font-weight:600;background:#EEF5FC">REAL</th>
+            <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--mut);font-weight:600;background:#EEF5FC">%</th>
           </tr>
         </thead>
         <tbody id="marcas-tbody"></tbody>
@@ -2382,8 +2385,15 @@ function renderMarcasTable(list){
   const tfoot=document.getElementById('marcas-tfoot');
   if(!tbody)return;
   const fmtE=v=>v>0?Math.round(v).toLocaleString('es-ES'):'—';
-  const pc=p=>p===null?'var(--mut)':p>=100?'var(--grn)':p>=75?'var(--amb)':'var(--red)';
-  const cs='text-align:right;font-size:10px;padding:3px 4px;white-space:nowrap;';
+  const pctColor=p=>p===null?'var(--mut)':p>=100?'var(--grn)':p>=75?'var(--amb)':'var(--red)';
+  const pctFmt=p=>p!==null?Math.round(p)+'%':'—';
+  const TD='padding:6px 8px;text-align:right;font-size:11px;white-space:nowrap;';
+  const PREV=TD+'color:var(--acc);';
+  const REAL_OK=TD+'color:var(--grn);font-weight:600;';
+  const REAL_NOK=TD+'color:var(--red);font-weight:600;';
+  const REAL_NA=TD+'color:var(--mut);';
+  const SEP='border-left:1.5px solid var(--brd);';
+  const SEP2='border-left:2px solid var(--brd);';
 
   tbody.innerHTML=list.filter(m=>m.id).map(m=>{
     const v=m.ventas||{}, p=m.previstos||{};
@@ -2391,18 +2401,28 @@ function renderMarcasTable(list){
     const totP=MESES.reduce((s,mes)=>s+(p[mes]||0),0);
     const incr=totP>0?totV/totP*100:null;
     return`<tr style="opacity:${m.activa===false?0.45:1}" id="marca-row-${m.id}">
-      <td style="padding:2px 4px;text-align:center"><input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()"></td>
-      <td style="font-size:11px;font-weight:700;padding:3px 6px;white-space:nowrap">${m.nombre}${m.notas?`<div style="font-size:9px;color:var(--mut);font-weight:400">${m.notas}</div>`:''}</td>
+      <td style="padding:4px 6px;text-align:center;vertical-align:middle">
+        <input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()">
+      </td>
+      <td style="padding:6px 10px;font-size:12px;font-weight:600;white-space:nowrap;vertical-align:middle">
+        ${m.nombre}
+        ${m.activa===false?'<span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:5px;margin-left:4px;font-weight:400">inactiva</span>':''}
+        ${m.notas?`<div style="font-size:10px;color:var(--mut);font-weight:400;margin-top:1px">${m.notas}</div>`:''}
+      </td>
       ${MESES.map(mes=>{
-        const vr=v[mes]||0,vp=p[mes]||0,pct=vp>0?vr/vp*100:null;
-        return`<td style="${cs}border-left:1.5px solid var(--brd);color:var(--acc);cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')" title="Prev ${mes}">${fmtE(vp)}</td>
-               <td style="${cs}color:${vr>0&&vp>0?(vr>=vp?'var(--grn)':'var(--red)'):'var(--mut)'};cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')" title="Real ${mes}">${fmtE(vr)}</td>
-               <td style="${cs}font-weight:700;color:${pc(pct)}">${pct!==null?Math.round(pct)+'%':'—'}</td>`;
+        const vr=v[mes]||0, vp=p[mes]||0;
+        const pct=vp>0?vr/vp*100:null;
+        const rColor=vr>0&&vp>0?(vr>=vp?REAL_OK:REAL_NOK):REAL_NA;
+        return`<td style="${PREV}${SEP}cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')" title="Editar previsto ${mes}">${fmtE(vp)}</td>
+               <td style="${rColor}cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')" title="Editar real ${mes}">${fmtE(vr)}</td>
+               <td style="${TD}font-weight:600;color:${pctColor(pct)}">${pctFmt(pct)}</td>`;
       }).join('')}
-      <td style="${cs}border-left:2px solid var(--brd);color:var(--acc);font-weight:700">${fmtE(totP)}</td>
-      <td style="${cs}color:var(--grn);font-weight:700">${fmtE(totV)}</td>
-      <td style="${cs}font-weight:700;color:${pc(incr)}">${incr!==null?Math.round(incr)+'%':'—'}</td>
-      <td style="padding:2px 3px"><button class="bico e" onclick="editMarca(${m.id})" style="width:20px;height:20px;font-size:11px"><i class="ti ti-pencil"></i></button></td>
+      <td style="${PREV}${SEP2}background:#F7FAFF;font-weight:700">${fmtE(totP)}</td>
+      <td style="${totV>0&&totP>0?(totV>=totP?REAL_OK:REAL_NOK):REAL_NA}background:#F7FAFF">${fmtE(totV)}</td>
+      <td style="${TD}font-weight:700;color:${pctColor(incr)};background:#F7FAFF">${pctFmt(incr)}</td>
+      <td style="padding:4px 5px;text-align:center;vertical-align:middle">
+        <button class="bico e" onclick="editMarca(${m.id})" style="width:22px;height:22px;font-size:12px"><i class="ti ti-pencil"></i></button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -2411,18 +2431,27 @@ function renderMarcasTable(list){
   const totV=MESES.reduce((a,m)=>a+sumV(m),0);
   const totP=MESES.reduce((a,m)=>a+sumP(m),0);
   const incrT=totP>0?totV/totP*100:null;
-  const cs2='text-align:right;font-size:10px;padding:3px 4px;font-weight:700;';
+  const FT='text-align:right;font-size:11px;padding:7px 8px;font-weight:700;white-space:nowrap;border-top:1.5px solid var(--brd);';
+
   tfoot.innerHTML=`<tr style="background:#EEF5EC">
-    <td colspan="2" style="font-size:10px;padding:3px 6px">TOTAL (${list.filter(m=>m.id).length})</td>
-    ${MESES.map(mes=>{const vp=sumP(mes),vr=sumV(mes),pct=vp>0?vr/vp*100:null;
-      return`<td style="${cs2}border-left:1.5px solid var(--brd);color:var(--acc)">${fmtE(vp)}</td><td style="${cs2}color:var(--grn)">${fmtE(vr)}</td><td style="${cs2}color:${pc(pct)}">${pct!==null?Math.round(pct)+'%':'—'}</td>`;
+    <td style="border-top:1.5px solid var(--brd)"></td>
+    <td style="font-size:11px;padding:7px 10px;font-weight:700;border-top:1.5px solid var(--brd)">
+      TOTAL <span style="font-weight:400;color:var(--mut)">(${list.filter(m=>m.id).length} marcas)</span>
+    </td>
+    ${MESES.map(mes=>{
+      const vp=sumP(mes),vr=sumV(mes),pct=vp>0?vr/vp*100:null;
+      return`<td style="${FT}${SEP}color:var(--acc)">${fmtE(vp)}</td>
+             <td style="${FT}color:${pct!==null&&pct>=100?'var(--grn)':pct!==null?'var(--red)':'var(--mut)'}">${fmtE(vr)}</td>
+             <td style="${FT}color:${pctColor(pct)}">${pctFmt(pct)}</td>`;
     }).join('')}
-    <td style="${cs2}border-left:2px solid var(--brd);color:var(--acc)">${fmtE(totP)}</td>
-    <td style="${cs2}color:var(--grn)">${fmtE(totV)}</td>
-    <td style="${cs2}color:${pc(incrT)}">${incrT!==null?Math.round(incrT)+'%':'—'}</td>
-    <td></td>
+    <td style="${FT}${SEP2}color:var(--acc);background:#EEF5EC">${fmtE(totP)}</td>
+    <td style="${FT}color:${totV>=totP?'var(--grn)':'var(--red)'};background:#EEF5EC">${fmtE(totV)}</td>
+    <td style="${FT}color:${pctColor(incrT)};background:#EEF5EC">${pctFmt(incrT)}</td>
+    <td style="border-top:1.5px solid var(--brd)"></td>
   </tr>`;
 }
+
+
 
 function renderSobrestock(){
   const tbody=document.getElementById('sobrestock-tbody');
@@ -2618,11 +2647,12 @@ async function importarMarcasXL(){
   const {marcaData,sobData}=d;
   let matched=0,created=0;
   Object.entries(marcaData).forEach(([nombre,meses])=>{
-    let m=DB_MARCAS.find(x=>x.id&&x.nombre.toUpperCase()===nombre.toUpperCase());
-    if(!m) m=DB_MARCAS.find(x=>x.id&&(x.nombre.toUpperCase().includes(nombre.toUpperCase())||nombre.toUpperCase().includes(x.nombre.toUpperCase())));
+    const nombreUp = nombre.trim().toUpperCase();
+    // Exact match only — no partial to avoid wrong assignments
+    let m = DB_MARCAS.find(x=>x.id && x.nombre.trim().toUpperCase()===nombreUp);
     if(!m){
       const nextId=DB_MARCAS.filter(x=>x.id).length?Math.max(...DB_MARCAS.filter(x=>x.id).map(x=>x.id))+1:1;
-      m={id:nextId,nombre,activa:true,notas:'',ventas:{},previstos:{}};
+      m={id:nextId,nombre:nombre.trim(),activa:true,notas:'',ventas:{},previstos:{}};
       DB_MARCAS.push(m); created++;
     } else { matched++; }
     if(!m.previstos) m.previstos={};
