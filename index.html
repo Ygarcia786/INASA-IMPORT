@@ -2315,8 +2315,7 @@ function renderMarcas(){
       <div class="pt"><i class="ti ti-rosette"></i>Marcas &amp; Proveedores</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input class="fi" id="marca-search" placeholder="Buscar marca..." style="width:160px;padding:6px 10px" oninput="filterMarcas()">
-        <button class="btn btn-sm btn-green" onclick="openMarcasXL('previstos')"><i class="ti ti-target"></i>Subir previstos</button>
-        <button class="btn btn-sm" style="border-color:var(--grn);color:var(--grn)" onclick="openMarcasXL('ventas')"><i class="ti ti-chart-bar"></i>Subir ventas reales</button>
+        <button class="btn btn-sm btn-green" onclick="openMarcasXL()"><i class="ti ti-file-spreadsheet"></i>Subir previstos</button>
         <button class="btn btn-primary btn-sm" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
       </div>
     </div>
@@ -2388,14 +2387,12 @@ function renderMarcas(){
   setTimeout(()=>{ if(typeof makeResizableAll==='function') makeResizableAll(); else document.querySelectorAll('table').forEach(t=>{if(!t.dataset.rzbl){const ev=new Event('rzbl');t.dispatchEvent(ev);}});},50);
 }
 
-function openMarcasXL(campo='previstos'){
-  window.__marcasXLCampo__ = campo;
+function openMarcasXL(){
   const p=document.getElementById('marcas-xl-panel');
   const title=document.getElementById('marcas-xl-title');
   const hint=document.getElementById('marcas-xl-fmt-hint');
-  const esVentas=campo==='ventas';
-  if(title) title.innerHTML=`<i class="ti ti-file-spreadsheet"></i> Subir ${esVentas?'Ventas Reales':'Previstos'}`;
-  if(hint) hint.textContent=`Formato: CLIENTES | MARCAS | previsto neto | real neto | % — ${esVentas?'lee la columna real neto':'lee la columna previsto neto'} sumando todos los clientes por marca`;
+  if(title) title.innerHTML='<i class="ti ti-file-spreadsheet"></i> Subir previstos y ventas reales';
+  if(hint) hint.textContent='Formato: CLIENTES | MARCAS | previsto neto | real neto | % — importa previsto, real y sobrestock de todos los meses';
   if(p) p.style.display='block';
 }
 
@@ -2663,7 +2660,7 @@ function handleMarcasXL(ev){
           <div style="font-weight:700;color:var(--grn);margin-bottom:4px">✓ ${nM} marcas detectadas</div>
           <div style="color:var(--mut);margin-bottom:4px">${Object.keys(marcaData).slice(0,6).join(', ')}${nM>6?' ...':''}</div>
           ${!esVentas&&Object.keys(sobData).length?`<div style="color:var(--amb);font-weight:600;margin-bottom:8px">+ Sobrestock en ${Object.keys(sobData).length} meses</div>`:''}
-          <button class="btn btn-green btn-sm" onclick="importarMarcasXL()"><i class="ti ti-download"></i>Importar ${esVentas?'ventas reales':'previstos'} (${nM} marcas)</button>
+          <button class="btn btn-green btn-sm" onclick="importarMarcasXL()"><i class="ti ti-download"></i>Importar previstos + ventas (${nM} marcas)</button>
         </div>`;
       }catch(err){prev.innerHTML='<div style="color:var(--red)">⚠ Error: '+err.message+'</div>';}
     };
@@ -2674,9 +2671,8 @@ function handleMarcasXL(ev){
 async function importarMarcasXL(){
   const d=window.__marcasXLData__; if(!d) return;
   const {marcaData,sobData}=d;
-  const campo=window.__marcasXLCampo__||'previstos';
-  const esVentas=campo==='ventas';
   let matched=0,created=0;
+
   Object.entries(marcaData).forEach(([nombre,meses])=>{
     const nombreUp=nombre.trim().toUpperCase();
     let m=DB_MARCAS.find(x=>x.id&&x.nombre.trim().toUpperCase()===nombreUp);
@@ -2685,25 +2681,26 @@ async function importarMarcasXL(){
       m={id:nextId,nombre:nombre.trim(),activa:true,notas:'',ventas:{},previstos:{}};
       DB_MARCAS.push(m); created++;
     } else { matched++; }
-    if(esVentas){
-      if(!m.ventas) m.ventas={};
-      Object.entries(meses).forEach(([mes,{prev,real}])=>{ const v=real||prev||0; if(v>0) m.ventas[mes]=v; });
-    } else {
-      if(!m.previstos) m.previstos={};
-      Object.entries(meses).forEach(([mes,{prev}])=>{ if(prev>0) m.previstos[mes]=prev; });
-    }
+    if(!m.previstos) m.previstos={};
+    if(!m.ventas) m.ventas={};
+    Object.entries(meses).forEach(([mes,{prev,real}])=>{
+      if(prev>0) m.previstos[mes]=prev;
+      if(real>0) m.ventas[mes]=real;
+    });
   });
-  // Sobrestock solo al importar previstos
-  if(!esVentas && sobData){
+
+  // Sobrestock
+  if(sobData && Object.keys(sobData).length){
     if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
     Object.entries(sobData).forEach(([mes,vals])=>{
       DB_MARCAS._sobrestock[mes]=Object.assign({coste:0,vendido:0,saldo:0},vals);
       DB_MARCAS._sobrestock[mes].saldo=(DB_MARCAS._sobrestock[mes].coste||0)-(DB_MARCAS._sobrestock[mes].vendido||0);
     });
   }
+
   await saveMarcas();
   document.getElementById('marcas-xl-panel').style.display='none';
-  toast(`✓ ${esVentas?'Ventas':'Previstos'}: ${matched} actualizadas · ${created} creadas`);
+  toast(`✓ ${matched} marcas actualizadas · ${created} creadas — previstos + ventas reales`);
   renderMarcas();
 }
 
