@@ -3578,6 +3578,7 @@ function renderPromociones(){
         <button class="btn btn-sm" onclick="openArchivoPromos()"><i class="ti ti-archive"></i>Archivar</button>
         <button class="btn btn-sm" onclick="openRestaurarPromos()"><i class="ti ti-archive-off"></i>Restaurar</button>
         <button class="btn btn-green btn-sm" onclick="openModal('importPromo')"><i class="ti ti-file-spreadsheet"></i>Importar Excel</button>
+        <button class="btn btn-primary btn-sm" onclick="openNuevaPromo()"><i class="ti ti-plus"></i>Nueva promoción</button>
       </div>
     </div>
 
@@ -3638,7 +3639,127 @@ function renderPromociones(){
   updatePromoBadge();
 }
 
-let promoVistaTabla = false;
+function openNuevaPromo(idEdit){
+  const p = idEdit!=null ? DB_PROMOS.find(x=>x._id===idEdit) : null;
+  const isNew = !p;
+  const clientes = [...new Set(DB.clientes.map(c=>c.nombre))].sort();
+  const marcas = [...new Set(DB_PROMOS.map(x=>x.marca).filter(Boolean))].sort();
+  const tematicas = [...new Set(DB_PROMOS.map(x=>x.tematica).filter(Boolean))].sort();
+
+  const html=`
+  <div id="nueva-promo-bg" style="position:fixed;inset:0;background:rgba(10,18,40,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--sur);border-radius:16px;width:640px;max-width:98vw;box-shadow:0 18px 60px rgba(0,0,0,.25);overflow:hidden">
+      <div style="padding:16px 22px;background:linear-gradient(135deg,var(--acc),var(--grn));color:#fff;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px"><i class="ti ti-tag"></i>${isNew?'Nueva promoción':'Editar promoción'}</div>
+        <button onclick="document.getElementById('nueva-promo-bg').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:15px"><i class="ti ti-x"></i></button>
+      </div>
+      <div style="padding:20px 22px;display:flex;flex-direction:column;gap:10px">
+        <div class="fr">
+          <div class="fg"><div class="fl">Cliente *</div>
+            <input class="fi" id="np-cliente" list="np-cli-list" value="${p?.cliente||''}" placeholder="Cliente">
+            <datalist id="np-cli-list">${clientes.map(c=>`<option value="${c}">`).join('')}</datalist>
+          </div>
+          <div class="fg"><div class="fl">Mes</div>
+            <select class="fi" id="np-mes">
+              <option value="">— Mes —</option>
+              ${MESES_ORDER.map(m=>`<option value="${m}" ${p?.mes===m?'selected':''}>${m}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="fr">
+          <div class="fg"><div class="fl">Marca</div>
+            <input class="fi" id="np-marca" list="np-marca-list" value="${p?.marca||''}" placeholder="Marca o proveedor">
+            <datalist id="np-marca-list">${marcas.map(m=>`<option value="${m}">`).join('')}</datalist>
+          </div>
+          <div class="fg"><div class="fl">Temática</div>
+            <input class="fi" id="np-tematica" list="np-tem-list" value="${p?.tematica||''}" placeholder="Temática">
+            <datalist id="np-tem-list">${tematicas.map(t=>`<option value="${t}">`).join('')}</datalist>
+          </div>
+        </div>
+        <div class="fr">
+          <div class="fg"><div class="fl">EAN</div><input class="fi" id="np-ean" value="${p?.ean||''}" placeholder="Código EAN"></div>
+          <div class="fg"><div class="fl">Producto</div><input class="fi" id="np-producto" value="${p?.producto||''}" placeholder="Nombre del producto"></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><div class="fl">Período</div><input class="fi" id="np-periodo" value="${p?.periodo||''}" placeholder="Ej: 01/03 - 15/03"></div>
+          <div class="fg"><div class="fl">Quincena</div>
+            <select class="fi" id="np-quincena">
+              <option value="">—</option>
+              <option value="1" ${p?.quincena==='1'?'selected':''}>1ª Quincena</option>
+              <option value="2" ${p?.quincena==='2'?'selected':''}>2ª Quincena</option>
+            </select>
+          </div>
+        </div>
+        <div class="fr">
+          <div class="fg"><div class="fl">Fecha envío</div><input class="fi" id="np-fecha-envio" type="date" value="${p?.fecha_envio||''}"></div>
+          <div class="fg"><div class="fl">Fecha confirmación</div><input class="fi" id="np-fecha-confirm" type="date" value="${p?.fecha_confirmacion||''}"></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><div class="fl">Redención (%)</div><input class="fi" id="np-redencion" type="number" step="0.01" value="${p?.redencion||''}" placeholder="0.00"></div>
+          <div class="fg"><div class="fl">Dcto. Factura (%)</div><input class="fi" id="np-dcto" type="number" step="0.01" value="${p?.dcto_factura||''}" placeholder="0.00"></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><div class="fl">Com. Comercial</div><input class="fi" id="np-com" value="${p?.com_comercial||''}" placeholder="Comentario comercial"></div>
+          <div class="fg"><div class="fl">¿Promo realizada?</div>
+            <select class="fi" id="np-realizada">
+              <option value="">— Pendiente —</option>
+              <option value="si" ${p?.promo_realizada==='si'?'selected':''}>✓ Sí</option>
+              <option value="no" ${p?.promo_realizada==='no'?'selected':''}>✗ No</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:10px;border-top:1px solid var(--brd)">
+          ${!isNew?`<button onclick="deletePromo(${idEdit})" style="padding:8px 14px;border-radius:8px;border:1.5px solid var(--red);background:var(--sur);color:var(--red);cursor:pointer;font-weight:600;margin-right:auto">Eliminar</button>`:''}
+          <button onclick="document.getElementById('nueva-promo-bg').remove()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-weight:600">Cancelar</button>
+          <button onclick="saveNuevaPromo(${idEdit??'null'})" style="padding:8px 20px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700"><i class="ti ti-check"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  setTimeout(()=>document.getElementById('np-cliente')?.focus(), 50);
+}
+
+async function saveNuevaPromo(idEdit){
+  const cliente = document.getElementById('np-cliente')?.value.trim();
+  if(!cliente){ toast('⚠ El cliente es obligatorio'); return; }
+  const obj = {
+    cliente,
+    mes:               document.getElementById('np-mes')?.value||'',
+    marca:             document.getElementById('np-marca')?.value.trim()||'',
+    tematica:          document.getElementById('np-tematica')?.value.trim()||'',
+    ean:               document.getElementById('np-ean')?.value.trim()||'',
+    producto:          document.getElementById('np-producto')?.value.trim()||'',
+    periodo:           document.getElementById('np-periodo')?.value.trim()||'',
+    quincena:          document.getElementById('np-quincena')?.value||'',
+    fecha_envio:       document.getElementById('np-fecha-envio')?.value||'',
+    fecha_confirmacion:document.getElementById('np-fecha-confirm')?.value||'',
+    redencion:         parseFloat(document.getElementById('np-redencion')?.value)||0,
+    dcto_factura:      parseFloat(document.getElementById('np-dcto')?.value)||0,
+    com_comercial:     document.getElementById('np-com')?.value.trim()||'',
+    promo_realizada:   document.getElementById('np-realizada')?.value||'',
+  };
+  if(idEdit!=null){
+    const p = DB_PROMOS.find(x=>x._id===idEdit);
+    if(p) Object.assign(p, obj);
+  } else {
+    const nextId = DB_PROMOS.length ? Math.max(...DB_PROMOS.map(x=>x._id||0))+1 : 1;
+    DB_PROMOS.push({_id: nextId, ...obj});
+  }
+  document.getElementById('nueva-promo-bg')?.remove();
+  await savePromos();
+  renderPromociones();
+  toast(idEdit!=null ? '✓ Promoción actualizada' : '✓ Promoción añadida');
+}
+
+async function deletePromo(id){
+  if(!confirm('¿Eliminar esta promoción?')) return;
+  DB_PROMOS = DB_PROMOS.filter(x=>x._id!==id);
+  document.getElementById('nueva-promo-bg')?.remove();
+  await savePromos();
+  renderPromociones();
+  toast('✓ Promoción eliminada');
+}
 function togglePromoVista(){
   promoVistaTabla = !promoVistaTabla;
   const btnTxt = promoVistaTabla ? '<i class="ti ti-layout-list"></i>Vista agrupada' : '<i class="ti ti-layout-list"></i>Vista tabla';
@@ -3880,42 +4001,11 @@ function closePromoDetail(){document.getElementById('promo-detail-bg').classList
 
 function editPromo(idx){
   const p=DB_PROMOS[idx]; if(!p) return;
-  currentModal='edit-promo';
-  document.getElementById('mttl').innerHTML='<i class="ti ti-tag"></i>Editar Promoción';
-  document.getElementById('mbody').innerHTML=`
-    <input type="hidden" id="m-pidx" value="${idx}">
-    <div class="fr">
-      <div class="fg"><div class="fl">Cliente</div><input class="fi" id="m-pcli" value="${p.cliente||''}"></div>
-      <div class="fg"><div class="fl">Mes</div><input class="fi" id="m-pmes" value="${p.mes||''}"></div>
-    </div>
-    <div class="fr">
-      <div class="fg"><div class="fl">Quincena</div><input class="fi" id="m-pquinc" value="${p.quincena||''}"></div>
-      <div class="fg"><div class="fl">EAN 13</div><input class="fi" id="m-pean" value="${p.ean||''}"></div>
-    </div>
-    <div class="fg"><div class="fl">Producto</div><input class="fi" id="m-pprod" value="${p.producto||''}"></div>
-    <div class="fr">
-      <div class="fg"><div class="fl">Marca</div><input class="fi" id="m-pmarca" value="${p.marca||''}"></div>
-      <div class="fg"><div class="fl">Temática</div><input class="fi" id="m-ptem" value="${p.tematica||''}"></div>
-    </div>
-    <div class="fg"><div class="fl">Período Promocional</div><input class="fi" id="m-pperiodo" placeholder="ej: 14-01 AL 26-01" value="${p.periodo_promo||''}"></div>
-    <div class="fr">
-      <div class="fg"><div class="fl">Fecha Envío</div><input class="fi" id="m-pfenv" value="${p.fecha_envio||''}"></div>
-      <div class="fg"><div class="fl">Fecha Confirmación</div><input class="fi" id="m-pfconf" value="${p.fecha_confirmacion||''}"></div>
-    </div>
-    <div class="fg"><div class="fl">Redención (importe)</div><input class="fi" id="m-pred" value="${p.redencion||''}"></div>
-    <div class="fg"><div class="fl">Dcto. en Factura</div><input class="fi" id="m-pdcto" value="${p.dcto_factura||''}"></div>
-    <div class="fr">
-      <div class="fg"><div class="fl">Promo Realizada</div>
-        <select class="fi" id="m-preal">
-          <option value="" ${!p.promo_realizada?'selected':''}>—</option>
-          <option value="si" ${p.promo_realizada==='si'?'selected':''}>SÍ</option>
-          <option value="no" ${p.promo_realizada==='no'?'selected':''}>NO</option>
-        </select></div>
-    </div>
-    <div class="fg"><div class="fl">Comentarios Área Comercial</div><input class="fi" id="m-pcomcial" value="${p.com_comercial||''}"></div>`;
-  document.getElementById('mfoot').innerHTML=`<button class="btn btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" onclick="saveModal()">Guardar</button>`;
-  document.getElementById('mbg').classList.add('on');
+  openNuevaPromo(p._id);
+  // Close detail panel if open
+  document.getElementById('promo-detail-bg')?.classList.remove('on');
 }
+
 
 // ══════════════════════════════════════════════════════
 //  TOAST
