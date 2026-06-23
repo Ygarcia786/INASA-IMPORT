@@ -2403,12 +2403,12 @@ function renderMarcasTable(list){
     const isPast=i<=lastMesIdx;
     const bg=isPast?'#EEF2F8':'#F7F9FD';
     const textOp=isPast?'1':'0.5';
-    return`<th style="text-align:center;background:${bg};border-left:1px solid #D4DCE8;opacity:${textOp};min-width:90px;padding:0">
-      <div style="padding:4px 6px;font-size:10px;font-weight:700;color:#18243A;border-bottom:0.5px solid #D4DCE8">${mes}</div>
+    return`<th style="text-align:center;background:${bg};border-left:1px solid #D4DCE8;opacity:${textOp};min-width:72px;padding:0">
+      <div style="padding:3px 4px;font-size:9px;font-weight:700;color:#18243A;border-bottom:0.5px solid #D4DCE8">${mes}</div>
       <div style="display:flex">
-        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #E8EDF5">N.REAL</div>
-        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#1558B0;padding:3px 4px;border-right:0.5px solid #E8EDF5">N.PREV</div>
-        <div style="width:32px;text-align:right;font-size:8px;font-weight:700;color:#6878A0;padding:3px 4px">EVL%</div>
+        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#0A6E50;padding:2px 3px;border-right:0.5px solid #E8EDF5">N.REAL</div>
+        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#1558B0;padding:2px 3px;border-right:0.5px solid #E8EDF5">N.PREV</div>
+        <div style="width:32px;text-align:right;font-size:8px;font-weight:700;color:#6878A0;padding:2px 3px">EVL%</div>
       </div>
     </th>`;
   }).join('');
@@ -2431,9 +2431,9 @@ function renderMarcasTable(list){
       const rColor=vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8';
       return`<td style="${bg}border-left:1px solid #D4DCE8;padding:0">
         <div style="display:flex">
-          <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:600;color:${rColor};cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')">${fmtE(vr)}</div>
-          <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;color:#1558B0;cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')">${fmtE(vp)}</div>
-          <div style="width:32px;text-align:right;padding:5px 4px;font-size:10px;font-weight:600;color:${pctColor(pct)}">${pctFmt(pct)}</div>
+          <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${rColor};cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')">${fmtE(vr)}</div>
+          <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;color:#1558B0;cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')">${fmtE(vp)}</div>
+          <div style="width:26px;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${pctColor(pct)}">${pctFmt(pct)}</div>
         </div>
       </td>`;
     }).join('');
@@ -2445,14 +2445,26 @@ function renderMarcasTable(list){
       <td style="position:sticky;left:28px;background:#fff;z-index:1;border-right:1.5px solid #D4DCE8;padding:5px 10px;font-size:11.5px;font-weight:700;white-space:nowrap;min-width:140px">
         ${m.nombre}${m.activa===false?' <span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:4px;font-weight:400">inactiva</span>':''}
       </td>
-      <td style="border-left:2px solid #D4DCE8;background:#EEF9F4;padding:0;min-width:130px">
+      ${mesCells}
+      <td style="border-left:2px solid #D4DCE8;background:#EEF5FC;padding:0;min-width:110px">
+        <div style="display:flex">
+          ${(()=>{
+            const totV=MESES.reduce((s,mes)=>s+(v[mes]||0),0);
+            const totP=MESES.reduce((s,mes)=>s+(p[mes]||0),0);
+            const totPct=totP>0&&totV>0?totV/totP*100:null;
+            return`<div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:${totV>0&&totP>0?(totV>=totP?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #C4CEDF">${fmtE(totV)}</div>
+                   <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #C4CEDF">${fmtE(totP)}</div>
+                   <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:${pctColor(totPct)}">${pctFmt(totPct)}</div>`;
+          })()}
+        </div>
+      </td>
+      <td style="border-left:2px solid #D4DCE8;background:#D1FAE5;padding:0;min-width:130px">
         ${acumPct!==null?`<div style="padding:4px 8px;text-align:center">
           <div style="font-size:9px;color:#0A6E50;font-weight:600;margin-bottom:1px">hasta ${ultMesAcum}</div>
           <div style="font-size:14px;font-weight:700;color:${acumColor};line-height:1">${pctFmt(acumPct)}</div>
-          <div style="font-size:9px;color:#6878A0;margin-top:1px">${fmtE(acumV)} / ${fmtE(acumP)}</div>
+          <div style="font-size:9px;color:#1558B0;margin-top:1px">prev: ${fmtE(acumP)}</div>
         </div>`:`<div style="padding:6px;text-align:center;color:#B0B8C8;font-size:10px">—</div>`}
       </td>
-      ${mesCells}
       <td style="padding:3px 5px;width:26px;text-align:center">
         <button class="bico e" onclick="editMarca(${m.id})" style="width:22px;height:22px;font-size:11px"><i class="ti ti-pencil"></i></button>
       </td>
@@ -2473,6 +2485,15 @@ function renderMarcasTable(list){
           <th style="position:sticky;left:28px;z-index:3;background:#EEF2F8;border-right:1.5px solid #D4DCE8;border-bottom:1.5px solid #D4DCE8;min-width:140px;padding:0">
             <div style="padding:6px 10px;font-size:11px;font-weight:700;color:#18243A">PROVEEDOR</div>
           </th>
+          ${mesHeaders}
+          <th style="background:#EEF5FC;border-left:2px solid #D4DCE8;border-bottom:1.5px solid #D4DCE8;min-width:110px;padding:0;text-align:center">
+            <div style="padding:4px 6px;font-size:10px;font-weight:700;color:#1558B0;border-bottom:0.5px solid #C4CEDF">TOTAL ANUAL</div>
+            <div style="display:flex">
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #C4CEDF">N.REAL</div>
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#1558B0;padding:3px 4px;border-right:0.5px solid #C4CEDF">N.PREV</div>
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#6878A0;padding:2px 3px">EVL%</div>
+            </div>
+          </th>
           <th style="background:#D1FAE5;border-left:2px solid #D4DCE8;border-bottom:1.5px solid #D4DCE8;min-width:130px;padding:0;text-align:center">
             <div style="padding:4px 6px;font-size:10px;font-weight:700;color:#065F46;border-bottom:0.5px solid #A7F3D0">ACUMULADO${lastMesNombre?' hasta '+lastMesNombre:''}</div>
             <div style="display:flex">
@@ -2481,7 +2502,6 @@ function renderMarcasTable(list){
               <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#065F46;padding:3px 4px">EVL%</div>
             </div>
           </th>
-          ${mesHeaders}
           <th style="width:26px;border-bottom:1.5px solid #D4DCE8;background:#F3F6FB"></th>
         </tr>
       </thead>
@@ -2492,10 +2512,6 @@ function renderMarcasTable(list){
           <td style="position:sticky;left:28px;background:#EEF5EC;z-index:1;padding:6px 10px;font-size:11px;font-weight:700;border-right:1.5px solid #D4DCE8">
             TOTAL <span style="font-weight:400;color:#6878A0">(${sorted.length})</span>
           </td>
-          <td style="border-left:2px solid #D4DCE8;background:#D1FAE5;padding:6px 8px;text-align:center">
-            ${acPct!==null?`<div style="font-size:9px;color:#065F46;font-weight:600">${fmtE(acV)} / ${fmtE(acP)}</div>
-            <div style="font-size:15px;font-weight:700;color:${pctColor(acPct)}">${pctFmt(acPct)}</div>`:'—'}
-          </td>
           ${MESES.map((mes,i)=>{
             const vr=sorted.reduce((a,m)=>a+((m.ventas||{})[mes]||0),0);
             const vp=sorted.reduce((a,m)=>a+((m.previstos||{})[mes]||0),0);
@@ -2503,12 +2519,29 @@ function renderMarcasTable(list){
             const isPast=i<=lastMesIdx;
             return`<td style="border-left:1px solid #D4DCE8;padding:0;${isPast?'':'background:#FAFBFD;'}">
               <div style="display:flex">
-                <div style="flex:1;text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:${vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #D4DCE8">${fmtE(vr)}</div>
-                <div style="flex:1;text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #D4DCE8">${fmtE(vp)}</div>
-                <div style="width:32px;text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #D4DCE8">${fmtE(vr)}</div>
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #D4DCE8">${fmtE(vp)}</div>
+                <div style="width:32px;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
               </div>
             </td>`;
           }).join('')}
+          ${(()=>{
+            const totV=sorted.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.ventas||{})[mes]||0),0),0);
+            const totP=sorted.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.previstos||{})[mes]||0),0),0);
+            const pct=totP>0&&totV>0?totV/totP*100:null;
+            return`<td style="border-left:2px solid #D4DCE8;background:#EEF5FC;padding:0">
+              <div style="display:flex">
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${totV>=totP?'#0A6E50':'#9B2020'};border-right:0.5px solid #C4CEDF">${fmtE(totV)}</div>
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #C4CEDF">${fmtE(totP)}</div>
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
+              </div>
+            </td>`;
+          })()}
+          <td style="border-left:2px solid #D4DCE8;background:#D1FAE5;padding:6px 8px;text-align:center">
+            ${acPct!==null?`<div style="font-size:9px;color:#065F46;font-weight:600">hasta ${lastMesNombre}</div>
+            <div style="font-size:15px;font-weight:700;color:${pctColor(acPct)}">${pctFmt(acPct)}</div>
+            <div style="font-size:9px;color:#1558B0">prev: ${fmtE(acP)}</div>`:'—'}
+          </td>
           <td style="width:26px"></td>
         </tr>
       </tfoot>
