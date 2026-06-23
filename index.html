@@ -2356,35 +2356,12 @@ function renderMarcas(){
       <span id="marcas-sel-count" style="font-size:11px;color:var(--mut)"> </span>
       <button id="marcas-del-btn" onclick="deleteSelectedMarcas()" style="display:none;padding:4px 12px;border-radius:7px;border:none;background:var(--red);color:#fff;font-size:12px;font-weight:700;cursor:pointer"><i class="ti ti-trash"></i> Eliminar seleccionadas</button>
     </div>
-    <!-- Tabla -->
-    <div class="card" style="overflow-x:auto"><div class="tw">
-      <table id="marcas-table">
-        <thead>
-          <tr>
-            <th rowspan="2" style="width:22px;padding:3px 4px;border-bottom:0.5px solid var(--brd)"></th>
-            <th rowspan="2" style="min-width:140px;font-size:11px;padding:6px 10px;text-align:left;border-bottom:0.5px solid var(--brd)">PROVEEDOR</th>
-            ${MESES.map(m=>`<th colspan="3" style="text-align:center;border-left:1.5px solid var(--brd);font-size:10px;padding:5px 4px;font-weight:600;letter-spacing:.3px">${m}</th>`).join('')}
-            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd);font-size:10px;padding:5px 4px;font-weight:600;background:#EEF5FC;color:var(--acc)">TOTAL</th>
-            <th rowspan="2" style="width:26px;border-bottom:0.5px solid var(--brd)"></th>
-          </tr>
-          <tr>
-            ${MESES.map(()=>`
-              <th style="text-align:right;font-size:9px;padding:3px 5px;border-left:1.5px solid var(--brd);color:var(--acc);font-weight:600;background:#F7F9FD">PREV</th>
-              <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--grn);font-weight:600;background:#F7F9FD">REAL</th>
-              <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--mut);font-weight:600;background:#F7F9FD">%</th>`).join('')}
-            <th style="text-align:right;font-size:9px;padding:3px 5px;border-left:2px solid var(--brd);color:var(--acc);font-weight:600;background:#EEF5FC">PREV</th>
-            <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--grn);font-weight:600;background:#EEF5FC">REAL</th>
-            <th style="text-align:right;font-size:9px;padding:3px 5px;color:var(--mut);font-weight:600;background:#EEF5FC">%</th>
-          </tr>
-        </thead>
-        <tbody id="marcas-tbody"></tbody>
-        <tfoot id="marcas-tfoot"></tfoot>
-      </table>
-    </div></div>`;
+    <!-- Tarjetas de marcas -->
+    <div id="marcas-cards"></div>
+    <!-- Totales -->
+    <div id="marcas-totales"></div>`;
   renderMarcasTable(DB_MARCAS.filter(m=>m.id));
   renderSobrestock();
-  // Apply column resizer to newly rendered table
-  setTimeout(()=>{ if(typeof makeResizableAll==='function') makeResizableAll(); else document.querySelectorAll('table').forEach(t=>{if(!t.dataset.rzbl){const ev=new Event('rzbl');t.dispatchEvent(ev);}});},50);
 }
 
 function openMarcasXL(){
@@ -2403,75 +2380,99 @@ function filterMarcas(){
 }
 
 function renderMarcasTable(list){
-  const tbody=document.getElementById('marcas-tbody');
-  const tfoot=document.getElementById('marcas-tfoot');
-  if(!tbody)return;
+  const el=document.getElementById('marcas-cards');
+  const elTot=document.getElementById('marcas-totales');
+  if(!el)return;
   const fmtE=v=>v>0?Math.round(v).toLocaleString('es-ES'):'—';
   const pctColor=p=>p===null?'var(--mut)':p>=100?'var(--grn)':p>=75?'var(--amb)':'var(--red)';
   const pctFmt=p=>p!==null?Math.round(p)+'%':'—';
-  const TD='padding:6px 8px;text-align:right;font-size:11px;white-space:nowrap;';
-  const PREV=TD+'color:var(--acc);';
-  const REAL_OK=TD+'color:var(--grn);font-weight:600;';
-  const REAL_NOK=TD+'color:var(--red);font-weight:600;';
-  const REAL_NA=TD+'color:var(--mut);';
-  const SEP='border-left:1.5px solid var(--brd);';
-  const SEP2='border-left:2px solid var(--brd);';
+  const MESES_LARGO=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  tbody.innerHTML=list.filter(m=>m.id).map(m=>{
+  el.innerHTML=list.filter(m=>m.id).map(m=>{
     const v=m.ventas||{}, p=m.previstos||{};
     const totV=MESES.reduce((s,mes)=>s+(v[mes]||0),0);
     const totP=MESES.reduce((s,mes)=>s+(p[mes]||0),0);
-    const incr=totP>0?totV/totP*100:null;
-    return`<tr style="opacity:${m.activa===false?0.45:1}" id="marca-row-${m.id}">
-      <td style="padding:4px 6px;text-align:center;vertical-align:middle">
-        <input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()">
-      </td>
-      <td style="padding:6px 10px;font-size:12px;font-weight:600;white-space:nowrap;vertical-align:middle">
-        ${m.nombre}
-        ${m.activa===false?'<span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:5px;margin-left:4px;font-weight:400">inactiva</span>':''}
-        ${m.notas?`<div style="font-size:10px;color:var(--mut);font-weight:400;margin-top:1px">${m.notas}</div>`:''}
-      </td>
-      ${MESES.map(mes=>{
-        const vr=v[mes]||0, vp=p[mes]||0;
-        const pct=vp>0?vr/vp*100:null;
-        const rColor=vr>0&&vp>0?(vr>=vp?REAL_OK:REAL_NOK):REAL_NA;
-        return`<td style="${PREV}${SEP}cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')" title="Editar previsto ${mes}">${fmtE(vp)}</td>
-               <td style="${rColor}cursor:pointer" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')" title="Editar real ${mes}">${fmtE(vr)}</td>
-               <td style="${TD}font-weight:600;color:${pctColor(pct)}">${pctFmt(pct)}</td>`;
-      }).join('')}
-      <td style="${PREV}${SEP2}background:#F7FAFF;font-weight:700">${fmtE(totP)}</td>
-      <td style="${totV>0&&totP>0?(totV>=totP?REAL_OK:REAL_NOK):REAL_NA}background:#F7FAFF">${fmtE(totV)}</td>
-      <td style="${TD}font-weight:700;color:${pctColor(incr)};background:#F7FAFF">${pctFmt(incr)}</td>
-      <td style="padding:4px 5px;text-align:center;vertical-align:middle">
-        <button class="bico e" onclick="editMarca(${m.id})" style="width:22px;height:22px;font-size:12px"><i class="ti ti-pencil"></i></button>
-      </td>
-    </tr>`;
-  }).join('');
+    const mesConDatos=MESES.filter(mes=>(v[mes]||0)>0&&(p[mes]||0)>0);
+    const acumV=mesConDatos.reduce((s,mes)=>s+(v[mes]||0),0);
+    const acumP=mesConDatos.reduce((s,mes)=>s+(p[mes]||0),0);
+    const acumPct=acumP>0?acumV/acumP*100:null;
+    const ultimoMes=mesConDatos.length?MESES_LARGO[MESES.indexOf(mesConDatos[mesConDatos.length-1])]:'';
+    const incrColor=pctColor(acumPct);
 
-  const sumV=mes=>list.filter(m=>m.id).reduce((a,m)=>a+((m.ventas||{})[mes]||0),0);
-  const sumP=mes=>list.filter(m=>m.id).reduce((a,m)=>a+((m.previstos||{})[mes]||0),0);
-  const totV=MESES.reduce((a,m)=>a+sumV(m),0);
-  const totP=MESES.reduce((a,m)=>a+sumP(m),0);
-  const incrT=totP>0?totV/totP*100:null;
-  const FT='text-align:right;font-size:11px;padding:7px 8px;font-weight:700;white-space:nowrap;border-top:1.5px solid var(--brd);';
+    const mesesHTML=MESES.map((mes,i)=>{
+      const vr=v[mes]||0, vp=p[mes]||0;
+      const tieneReal=vr>0, tienePrev=vp>0;
+      const pct=vp>0&&vr>0?vr/vp*100:null;
+      const barW=pct!==null?Math.min(100,Math.round(pct)):0;
+      const barColor=pct===null?'var(--brd)':pct>=100?'var(--grn)':pct>=75?'var(--amb)':'var(--red)';
+      const realColor=tieneReal&&tienePrev?(vr>=vp?'var(--grn)':'var(--red)'):'var(--mut)';
+      const bg=tieneReal?'var(--sur)':'#FAFBFD';
+      return`<div style="flex:1;padding:5px 4px;border-right:0.5px solid var(--brd);text-align:center;background:${bg};min-width:0">
+        <div style="font-size:9px;color:var(--mut);font-weight:600;margin-bottom:3px">${mes}</div>
+        <div style="font-size:10px;color:var(--acc)">${fmtE(vp)}</div>
+        <div style="font-size:10px;font-weight:600;color:${realColor}">${fmtE(vr)}</div>
+        <div style="font-size:9px;font-weight:600;color:${pctColor(pct)};margin-bottom:3px">${pctFmt(pct)}</div>
+        <div style="height:3px;background:var(--brd);border-radius:2px;overflow:hidden">
+          <div style="height:100%;width:${barW}%;background:${barColor};border-radius:2px"></div>
+        </div>
+      </div>`;
+    }).join('');
 
-  tfoot.innerHTML=`<tr style="background:#EEF5EC">
-    <td style="border-top:1.5px solid var(--brd)"></td>
-    <td style="font-size:11px;padding:7px 10px;font-weight:700;border-top:1.5px solid var(--brd)">
-      TOTAL <span style="font-weight:400;color:var(--mut)">(${list.filter(m=>m.id).length} marcas)</span>
-    </td>
-    ${MESES.map(mes=>{
-      const vp=sumP(mes),vr=sumV(mes),pct=vp>0?vr/vp*100:null;
-      return`<td style="${FT}${SEP}color:var(--acc)">${fmtE(vp)}</td>
-             <td style="${FT}color:${pct!==null&&pct>=100?'var(--grn)':pct!==null?'var(--red)':'var(--mut)'}">${fmtE(vr)}</td>
-             <td style="${FT}color:${pctColor(pct)}">${pctFmt(pct)}</td>`;
-    }).join('')}
-    <td style="${FT}${SEP2}color:var(--acc);background:#EEF5EC">${fmtE(totP)}</td>
-    <td style="${FT}color:${totV>=totP?'var(--grn)':'var(--red)'};background:#EEF5EC">${fmtE(totV)}</td>
-    <td style="${FT}color:${pctColor(incrT)};background:#EEF5EC">${pctFmt(incrT)}</td>
-    <td style="border-top:1.5px solid var(--brd)"></td>
-  </tr>`;
+    return`<div class="card" style="margin-bottom:8px;opacity:${m.activa===false?0.5:1}" id="marca-row-${m.id}">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:0.5px solid var(--brd)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()">
+          <span style="font-size:12px;font-weight:700;color:var(--txt)">${m.nombre}</span>
+          ${m.activa===false?'<span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 6px;border-radius:5px">inactiva</span>':''}
+          ${m.notas?`<span style="font-size:10px;color:var(--mut)">${m.notas}</span>`:''}
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="text-align:right">
+            <div style="font-size:9px;color:var(--mut)">Previsto</div>
+            <div style="font-size:12px;font-weight:700;color:var(--acc)">${fmtE(totP)}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:9px;color:var(--mut)">Real</div>
+            <div style="font-size:12px;font-weight:700;color:${totV>0&&totP>0?(totV>=totP?'var(--grn)':'var(--red)'):'var(--mut)'}">${fmtE(totV)}</div>
+          </div>
+          ${acumPct!==null?`<div style="background:#EEF9F4;border-radius:8px;padding:4px 10px;text-align:center;min-width:80px">
+            <div style="font-size:9px;color:var(--grn);font-weight:600">hasta ${ultimoMes}</div>
+            <div style="font-size:13px;font-weight:700;color:${incrColor}">${pctFmt(acumPct)}</div>
+          </div>`:''}
+          <button class="bico e" onclick="editMarca(${m.id})" style="width:24px;height:24px;font-size:12px"><i class="ti ti-pencil"></i></button>
+        </div>
+      </div>
+      <div style="display:flex;overflow-x:auto">${mesesHTML}</div>
+    </div>`;
+  }).join('') || '<div class="nodata">Sin marcas</div>';
+
+  // Totales globales
+  if(elTot){
+    const sumV=mes=>list.filter(m=>m.id).reduce((a,m)=>a+((m.ventas||{})[mes]||0),0);
+    const sumP=mes=>list.filter(m=>m.id).reduce((a,m)=>a+((m.previstos||{})[mes]||0),0);
+    const totV=MESES.reduce((a,m)=>a+sumV(m),0);
+    const totP=MESES.reduce((a,m)=>a+sumP(m),0);
+    const mesesConDatos=MESES.filter(mes=>list.filter(m=>m.id).some(m=>(m.ventas||{})[mes]>0&&(m.previstos||{})[mes]>0));
+    const acP=mesesConDatos.reduce((a,mes)=>a+sumP(mes),0);
+    const acV=mesesConDatos.reduce((a,mes)=>a+sumV(mes),0);
+    const acPct=acP>0?acV/acP*100:null;
+    const ultimoMes=mesesConDatos.length?MESES_LARGO[MESES.indexOf(mesesConDatos[mesesConDatos.length-1])]:'';
+    elTot.innerHTML=`<div class="card" style="padding:12px 16px;background:#EEF5EC;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--txt)">TOTAL — ${list.filter(m=>m.id).length} marcas</div>
+      <div style="display:flex;gap:16px;align-items:center">
+        <div style="text-align:right"><div style="font-size:9px;color:var(--mut)">Previsto anual</div><div style="font-size:14px;font-weight:700;color:var(--acc)">${fmtE(totP)}</div></div>
+        <div style="text-align:right"><div style="font-size:9px;color:var(--mut)">Real anual</div><div style="font-size:14px;font-weight:700;color:${totV>=totP?'var(--grn)':'var(--red)'}">${fmtE(totV)}</div></div>
+        ${acPct!==null?`<div style="background:#D1FAE5;border-radius:8px;padding:6px 14px;text-align:center">
+          <div style="font-size:9px;color:var(--grn);font-weight:600">Acumulado hasta ${ultimoMes}</div>
+          <div style="font-size:16px;font-weight:700;color:${pctColor(acPct)}">${pctFmt(acPct)}</div>
+          <div style="font-size:9px;color:var(--mut)">€${fmtE(acV)} de €${fmtE(acP)}</div>
+        </div>`:''}
+      </div>
+    </div>`;
+  }
 }
+
+
 
 
 
