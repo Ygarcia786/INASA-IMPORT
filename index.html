@@ -121,7 +121,7 @@
       <input type="file" id="vp-xl" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleVPXL(event)">
       <div id="vp-xl-prev" style="display:none;margin-bottom:14px"></div>
       <div class="tw" style="max-height:200px;overflow-y:auto">
-        <table><thead><tr><th>Año</th><th>Mes</th><th>Importe</th><th>Unidades</th><th>Descripción</th><th></th></tr></thead>
+        <table><thead><tr><th>Año</th><th>Mes</th><th>Importe</th><th>Evolución</th><th></th></tr></thead>
         <tbody id="vptbody"></tbody></table>
         <div id="vpempty" class="nodata" style="display:none">Sin ventas registradas</div>
       </div>
@@ -420,7 +420,9 @@ async function forceRefresh() {
 }
 
 function updateBadge() {
-  document.getElementById('tbadge').textContent = DB.tareas.filter(t=>!t.done).length;
+  const miNombre = currentUser?.name||'';
+  const count = DB.tareas.filter(t=>!t.done&&(!t.responsable||t.responsable===miNombre)).length;
+  document.getElementById('tbadge').textContent = count;
 }
 
 // ══════════════════════════════════════════════════════
@@ -701,15 +703,30 @@ function refreshVP() {
     <div class="mbarb" style="height:${Math.max(2,Math.round(v.importe/maxV*60))}px;opacity:${v.importe>0?1:.18}" title="${v.mes}: €${Math.round(v.importe).toLocaleString()}"></div>
     <div class="mbarl">${v.mes}</div>
   </div>`).join('');
-  // table — all with importe or ordered
   const rows = [...c.ventas].filter(v=>v.importe>0).sort((a,b)=>b.año-a.año||MESES.indexOf(a.mes)-MESES.indexOf(b.mes));
   const tbody = document.getElementById('vptbody');
   const empty = document.getElementById('vpempty');
   if (!rows.length) { tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
+
+  // Build a lookup for importe by mes for evolution calc
+  const importeByMes = {};
+  c.ventas.forEach(v=>{ if(v.importe>0) importeByMes[v.mes]=v.importe; });
+
   tbody.innerHTML = rows.map((v,i)=>{
+    // Evolución: % vs mes anterior en orden MESES
+    const mesIdx = MESES.indexOf(v.mes);
+    const mesPrev = mesIdx > 0 ? MESES[mesIdx-1] : null;
+    const impPrev = mesPrev ? (importeByMes[mesPrev]||0) : 0;
+    let evolHtml = '—';
+    if(impPrev > 0 && v.importe > 0){
+      const pct = ((v.importe - impPrev) / impPrev * 100);
+      const color = pct >= 0 ? 'var(--grn)' : 'var(--red)';
+      const arrow = pct >= 0 ? '▲' : '▼';
+      evolHtml = `<span style="color:${color};font-weight:700;font-size:11px">${arrow} ${Math.abs(pct).toFixed(1)}%</span>`;
+    }
+
     const depData = c.ventas_dep || {};
-    // Mostrar todos los departamentos que tienen datos para este mes
     const depKeys = Object.keys(depData).filter(d => (depData[d][v.mes]||0) > 0);
     const depRows = depKeys.length ? depKeys.map(d=>{
       const vd = (depData[d][v.mes]||0);
@@ -718,14 +735,16 @@ function refreshVP() {
         <td></td>
         <td style="padding-left:24px;font-size:11px;color:var(--mut)"><i class="ti ti-corner-down-right" style="font-size:10px"></i> ${d}</td>
         <td style="color:var(--acc);font-size:11px">€${vd.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        <td colspan="3" style="font-size:10px;color:var(--mut)">${pct}%</td>
+        <td style="font-size:10px;color:var(--mut)">${pct}%</td>
+        <td></td>
       </tr>`;
     }).join('') : '';
+
     return`<tr>
-      <td>${v.año||2026}</td><td><strong>${v.mes}</strong></td>
+      <td>${v.año||2026}</td>
+      <td><strong>${v.mes}</strong></td>
       <td style="color:var(--grn);font-weight:700">€${parseFloat(v.importe||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-      <td style="color:var(--mut)">${v.unidades||0}</td>
-      <td style="color:var(--mut);font-size:11px">${v.descripcion||''}</td>
+      <td>${evolHtml}</td>
       <td><button class="bico d" onclick="delVenta(${i})"><i class="ti ti-trash"></i></button></td>
     </tr>${depRows}`;
   }).join('');
@@ -1878,11 +1897,31 @@ async function delVacPeriodo(trabId, idx) {
 // ══════════════════════════════════════════════════════
 function renderTareas(){
   const pm={Alta:'tw-alta',Media:'tw-media',Baja:'tw-baja'};
-  const pend=DB.tareas.filter(t=>!t.done);
-  const done=DB.tareas.filter(t=>t.done);
+  const isAdmin = currentUser?.name==='Administrador';
+  const showAll = isAdmin && (localStorage.getItem('tareas_show_all')==='1');
+  const miNombre = currentUser?.name||'';
+
+  // Filtrar por usuario — admin puede ver todas si tiene el toggle activo
+  const misFilter = t => showAll || !t.responsable || t.responsable===miNombre;
+
+  const pend=DB.tareas.filter(t=>!t.done&&misFilter(t));
+  const done=DB.tareas.filter(t=>t.done&&misFilter(t));
+
   document.getElementById('content').innerHTML=`
     <div class="ph"><div class="pt"><i class="ti ti-checkbox"></i>Tareas</div>
-      <button class="btn btn-primary" onclick="openModal('tarea')"><i class="ti ti-plus"></i>Nueva tarea</button></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${isAdmin?`<button class="btn btn-sm" onclick="localStorage.setItem('tareas_show_all','${showAll?'0':'1'}');renderTareas()" style="gap:5px">
+          <i class="ti ti-${showAll?'user':'users'}"></i>${showAll?'Mis tareas':'Todas las tareas'}
+        </button>`:''}
+        <button class="btn btn-primary" onclick="openModal('tarea')"><i class="ti ti-plus"></i>Nueva tarea</button>
+      </div>
+    </div>
+
+    ${!isAdmin?`<div style="font-size:12px;color:var(--mut);margin-bottom:14px;display:flex;align-items:center;gap:6px">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--acc)"></div>
+      Mostrando tareas asignadas a <strong>${miNombre}</strong>
+    </div>`:''}
+
     <div class="g2">
       <div>
         <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Pendientes (${pend.length})</div>
@@ -1890,9 +1929,11 @@ function renderTareas(){
           <div class="tck" onclick="toggleT(${t._id})"><i class="ti ti-check" style="font-size:10px;display:none"></i></div>
           <div class="tinfo">
             <div class="ttl">${t.titulo}</div>
-            <div class="tmeta"><span>${t.empresa||''}</span><span>${t.fecha||''}</span>
-            <span class="tag ${pm[t.prioridad]||'tw-media'}">${t.prioridad}</span>
-            ${t.responsable?`<span style="color:var(--acc)">${t.responsable}</span>`:''}
+            <div class="tmeta">
+              <span>${t.empresa||''}</span>
+              <span>${t.fecha||''}</span>
+              <span class="tag ${pm[t.prioridad]||'tw-media'}">${t.prioridad}</span>
+              ${t.responsable?`<span style="background:#EEF5FC;color:var(--acc);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700"><i class="ti ti-user" style="font-size:9px"></i> ${t.responsable}</span>`:''}
             </div>
           </div>
           <button class="bico d" onclick="confirmDel('tarea',${t._id},'${t.titulo.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
@@ -1902,8 +1943,13 @@ function renderTareas(){
         <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Completadas (${done.length})</div>
         <div class="card">${done.map(t=>`<div class="titem">
           <div class="tck done" onclick="toggleT(${t._id})"><i class="ti ti-check" style="font-size:10px"></i></div>
-          <div class="tinfo"><div class="ttl done">${t.titulo}</div>
-          <div class="tmeta"><span>${t.empresa||''}</span></div></div>
+          <div class="tinfo">
+            <div class="ttl done">${t.titulo}</div>
+            <div class="tmeta">
+              <span>${t.empresa||''}</span>
+              ${t.responsable?`<span style="color:var(--mut);font-size:10px">${t.responsable}</span>`:''}
+            </div>
+          </div>
         </div>`).join('')||'<div class="nodata">Sin completadas</div>'}</div>
       </div>
     </div>`;
@@ -1946,10 +1992,15 @@ const MFORMS = {
     <div class="fg"><div class="fl">Contacto</div><input class="fi" id="m-contacto" placeholder="Persona de contacto"></div></div>
     <div class="fr"><div class="fg"><div class="fl">Email</div><input class="fi" id="m-email" placeholder="correo@empresa.com"></div>
     <div class="fg"><div class="fl">Teléfono</div><input class="fi" id="m-tel" placeholder="+34 000 000 000"></div></div>`}; },
-  tarea: () => { currentModal='tarea'; return {t:'<i class="ti ti-checkbox"></i>Nueva Tarea', b:`
+  tarea: () => { currentModal='tarea';
+    const trabajadores = DB_TRABAJADORES.map(t=>t.nombre).filter(Boolean);
+    return {t:'<i class="ti ti-checkbox"></i>Nueva Tarea', b:`
     <div class="fg"><div class="fl">Tarea *</div><input class="fi" id="m-titulo" placeholder="Descripción de la tarea"></div>
-    <div class="fr"><div class="fg"><div class="fl">Empresa</div><input class="fi" id="m-empresa" placeholder="Cliente relacionado"></div>
-    <div class="fg"><div class="fl">Responsable</div><input class="fi" id="m-resp" placeholder="Nombre"></div></div>
+    <div class="fr"><div class="fg"><div class="fl">Empresa / Cliente</div><input class="fi" id="m-empresa" placeholder="Cliente relacionado"></div>
+    <div class="fg"><div class="fl">Responsable</div>
+      <input class="fi" id="m-resp" list="m-resp-list" value="${currentUser?.name||''}" placeholder="Nombre">
+      <datalist id="m-resp-list">${trabajadores.map(n=>`<option value="${n}">`).join('')}</datalist>
+    </div></div>
     <div class="fr"><div class="fg"><div class="fl">Prioridad</div><select class="fi" id="m-prio"><option>Alta</option><option selected>Media</option><option>Baja</option></select></div>
     <div class="fg"><div class="fl">Fecha límite</div><input class="fi" id="m-fecha" type="date"></div></div>`};},
   contacto: () => { currentModal='contacto'; return {t:'<i class="ti ti-user-plus"></i>Nuevo Contacto', b:`
@@ -2283,20 +2334,20 @@ function renderMarcas(){
     </div>
     <!-- Tabla -->
     <div class="card" style="overflow-x:auto"><div class="tw">
-      <table id="marcas-table" style="font-size:10px">
+      <table id="marcas-table">
         <thead>
           <tr>
             <th rowspan="2" style="width:20px;padding:3px 4px"></th>
-            <th rowspan="2" style="min-width:130px;font-size:10px;padding:4px 6px">PROVEEDOR</th>
-            ${MESES.map(m=>`<th colspan="3" style="text-align:center;border-left:1.5px solid var(--brd);font-size:9px;padding:2px 4px">${m}</th>`).join('')}
-            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd);font-size:9px;padding:2px 4px">TOTAL</th>
+            <th rowspan="2" style="width:150px;font-size:10px;padding:4px 6px">PROVEEDOR</th>
+            ${MESES.map(m=>`<th colspan="3" style="text-align:center;border-left:1.5px solid var(--brd);font-size:9px;padding:2px 4px;min-width:90px">${m}</th>`).join('')}
+            <th colspan="3" style="text-align:center;border-left:2px solid var(--brd);font-size:9px;padding:2px 4px;min-width:90px">TOTAL</th>
             <th rowspan="2" style="width:24px"></th>
           </tr>
           <tr>
-            ${MESES.map(()=>`<th style="text-align:right;font-size:8px;padding:2px 3px;border-left:1.5px solid var(--brd);color:var(--acc)">PREV</th><th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--grn)">REAL</th><th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--mut)">%</th>`).join('')}
-            <th style="text-align:right;font-size:8px;padding:2px 3px;border-left:2px solid var(--brd);color:var(--acc)">PREV</th>
-            <th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--grn)">REAL</th>
-            <th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--mut)">%</th>
+            ${MESES.map(()=>`<th style="text-align:right;font-size:8px;padding:2px 3px;border-left:1.5px solid var(--brd);color:var(--acc);width:30px">PREV</th><th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--grn);width:30px">REAL</th><th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--mut);width:30px">%</th>`).join('')}
+            <th style="text-align:right;font-size:8px;padding:2px 3px;border-left:2px solid var(--brd);color:var(--acc);width:35px">PREV</th>
+            <th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--grn);width:35px">REAL</th>
+            <th style="text-align:right;font-size:8px;padding:2px 3px;color:var(--mut);width:30px">%</th>
           </tr>
         </thead>
         <tbody id="marcas-tbody"></tbody>
@@ -2305,6 +2356,8 @@ function renderMarcas(){
     </div></div>`;
   renderMarcasTable(DB_MARCAS.filter(m=>m.id));
   renderSobrestock();
+  // Apply column resizer to newly rendered table
+  setTimeout(()=>{ if(typeof makeResizableAll==='function') makeResizableAll(); else document.querySelectorAll('table').forEach(t=>{if(!t.dataset.rzbl){const ev=new Event('rzbl');t.dispatchEvent(ev);}});},50);
 }
 
 function openMarcasXL(){
@@ -3760,12 +3813,14 @@ async function deletePromo(id){
   renderPromociones();
   toast('✓ Promoción eliminada');
 }
+let promoVistaTabla = false;
 function togglePromoVista(){
   promoVistaTabla = !promoVistaTabla;
   const btnTxt = promoVistaTabla ? '<i class="ti ti-layout-list"></i>Vista agrupada' : '<i class="ti ti-layout-list"></i>Vista tabla';
   document.querySelector('[onclick="togglePromoVista()"]').innerHTML = btnTxt;
   document.getElementById('promo-agrupada').style.display = promoVistaTabla ? 'none' : '';
   document.getElementById('promo-tabla').style.display    = promoVistaTabla ? '' : 'none';
+  if(promoVistaTabla) applyPromoFilter();
 }
 
 function applyPromoFilter(){
@@ -4432,6 +4487,7 @@ function abrirConfiguracion(){
   }
 
   function applyAll(){ document.querySelectorAll('table').forEach(makeResizable); }
+  window.makeResizableAll = applyAll;
   applyAll();
   new MutationObserver(applyAll).observe(document.getElementById('content')||document.body,{childList:true,subtree:true});
 })();
