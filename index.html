@@ -393,7 +393,7 @@ function renderView(id){
   if(renders[id]) renders[id]();
 }
 async function refreshAllData(){
-  await Promise.all([loadDB(), loadPromos(), loadOportunidades(), loadCompromisos(), loadTrabajadores(), loadAliases()]);
+  await Promise.all([loadDB(), loadPromos(), loadOportunidades(), loadCompromisos(), loadTrabajadores(), loadAliases(), loadMarcas(), loadPaqueteria()]);
   updateBadge();
   updatePromoBadge();
 }
@@ -1049,6 +1049,7 @@ function renderDirectorio(){
     <div class="ph"><div class="pt"><i class="ti ti-users"></i>Directorio de Contactos</div>
       <div style="display:flex;gap:8px">
         <button class="btn" onclick="toggleDirCols()" title="Configurar columnas"><i class="ti ti-settings"></i>Columnas</button>
+        <button class="btn" onclick="abrirPaqueteria()" style="gap:5px"><i class="ti ti-truck-delivery"></i>Registro Paquetería</button>
         <button class="btn btn-green" onclick="openModal('import')"><i class="ti ti-file-spreadsheet"></i>Importar Excel</button>
         <button class="btn btn-primary" onclick="openModal('contacto')"><i class="ti ti-plus"></i>Nuevo contacto</button>
       </div>
@@ -1075,8 +1076,8 @@ function renderDirectorio(){
       </div>
     </div>
     <div id="dir-count" style="font-size:12px;color:var(--mut);margin-bottom:10px;text-align:right"></div>
-    <div class="card"><div class="tw" style="overflow-x:scroll">
-      <table><thead><tr id="dir-thead"></tr></thead>
+    <div class="card"><div class="tw" style="overflow-x:auto">
+      <table id="dir-table"><thead><tr id="dir-thead"></tr></thead>
       <tbody id="dir-body"></tbody></table>
       <div id="dir-empty" class="nodata" style="display:none">Sin contactos. Importa tu Excel o añade manualmente.</div>
     </div></div>`;
@@ -1115,8 +1116,12 @@ function renderDirTable(list,term){
   const empty=document.getElementById('dir-empty');
   // Update header with active columns
   const colDefs=[['cliente','Cliente'],['nombre','Nombre'],['departamento','Departamento'],['puesto','Puesto'],['email','Email'],['tel','Teléfono'],['obs','OBS'],['estado','Estado']];
-  if(thead)thead.innerHTML=colDefs.filter(([k])=>dirCols[k]).map(([,l])=>`<th>${l}</th>`).join('')+'<th></th>';
-  if(!list.length){if(tbody)tbody.innerHTML='';if(empty)empty.style.display='block';return;}
+  const colWidths={cliente:140,nombre:130,departamento:110,puesto:100,email:160,tel:100,obs:120,estado:80};
+  const tbl=document.getElementById('dir-table');
+  if(tbl) delete tbl.dataset.rzbl; // reset so resizer re-initializes
+  if(thead)thead.innerHTML=colDefs.filter(([k])=>dirCols[k]).map(([k,l])=>`<th style="min-width:${colWidths[k]||100}px;width:${colWidths[k]||100}px">${l}</th>`).join('')+'<th style="width:60px"></th>';
+  if(!list.length){if(tbody)tbody.innerHTML='';if(empty)empty.style.display='block';
+    setTimeout(()=>makeResizableAll&&makeResizableAll(),30); return;}
   if(empty)empty.style.display='none';
   if(tbody)tbody.innerHTML=list.map((c)=>{
     const cells=[];
@@ -1133,6 +1138,8 @@ function renderDirTable(list,term){
       <button class="bico d" onclick="confirmDel('contacto',${c._id},'${(c.nombre||c.cliente||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </td></tr>`;
   }).join('');
+  // Apply resizer after render
+  setTimeout(()=>{ if(typeof makeResizableAll==='function') makeResizableAll(); },30);
 }
 
 function editContacto(id){
@@ -1935,11 +1942,13 @@ function renderTareas(){
           <div class="tck" onclick="toggleT(${t._id})"><i class="ti ti-check" style="font-size:10px;display:none"></i></div>
           <div class="tinfo">
             <div class="ttl">${t.titulo}</div>
+            ${t.notas?`<div style="font-size:11px;color:var(--mut);margin-top:2px">${t.notas}</div>`:''}
             <div class="tmeta">
-              <span>${t.empresa||''}</span>
-              <span>${t.fecha||''}</span>
+              ${t.empresa?`<span><i class="ti ti-building" style="font-size:9px"></i> ${t.empresa}</span>`:''}
+              ${t.fecha?`<span><i class="ti ti-calendar" style="font-size:9px"></i> ${t.fecha}</span>`:''}
               <span class="tag ${pm[t.prioridad]||'tw-media'}">${t.prioridad}</span>
               ${t.responsable?`<span style="background:#EEF5FC;color:var(--acc);padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700"><i class="ti ti-user" style="font-size:9px"></i> ${t.responsable}</span>`:''}
+              ${t.asignado_por&&t.asignado_por!==t.responsable?`<span style="font-size:10px;color:var(--mut)">← ${t.asignado_por}</span>`:''}
             </div>
           </div>
           <button class="bico d" onclick="confirmDel('tarea',${t._id},'${t.titulo.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
@@ -1999,16 +2008,26 @@ const MFORMS = {
     <div class="fr"><div class="fg"><div class="fl">Email</div><input class="fi" id="m-email" placeholder="correo@empresa.com"></div>
     <div class="fg"><div class="fl">Teléfono</div><input class="fi" id="m-tel" placeholder="+34 000 000 000"></div></div>`}; },
   tarea: () => { currentModal='tarea';
-    const trabajadores = DB_TRABAJADORES.map(t=>t.nombre).filter(Boolean);
+    const trabajadores = DB_TRABAJADORES.map(t=>t.nombre).filter(Boolean).sort();
     return {t:'<i class="ti ti-checkbox"></i>Nueva Tarea', b:`
     <div class="fg"><div class="fl">Tarea *</div><input class="fi" id="m-titulo" placeholder="Descripción de la tarea"></div>
-    <div class="fr"><div class="fg"><div class="fl">Empresa / Cliente</div><input class="fi" id="m-empresa" placeholder="Cliente relacionado"></div>
-    <div class="fg"><div class="fl">Responsable</div>
-      <input class="fi" id="m-resp" list="m-resp-list" value="${currentUser?.name||''}" placeholder="Nombre">
-      <datalist id="m-resp-list">${trabajadores.map(n=>`<option value="${n}">`).join('')}</datalist>
-    </div></div>
-    <div class="fr"><div class="fg"><div class="fl">Prioridad</div><select class="fi" id="m-prio"><option>Alta</option><option selected>Media</option><option>Baja</option></select></div>
-    <div class="fg"><div class="fl">Fecha límite</div><input class="fi" id="m-fecha" type="date"></div></div>`};},
+    <div class="fr">
+      <div class="fg"><div class="fl">Empresa / Cliente</div><input class="fi" id="m-empresa" placeholder="Cliente relacionado"></div>
+      <div class="fg"><div class="fl">Fecha límite</div><input class="fi" id="m-fecha" type="date"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><div class="fl">Prioridad</div>
+        <select class="fi" id="m-prio"><option>Alta</option><option selected>Media</option><option>Baja</option></select>
+      </div>
+      <div class="fg"><div class="fl">Asignar a</div>
+        <select class="fi" id="m-resp">
+          <option value="${currentUser?.name||''}">${currentUser?.name||''} (yo)</option>
+          ${trabajadores.filter(n=>n!==currentUser?.name).map(n=>`<option value="${n}">${n}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="fg"><div class="fl">Notas</div><textarea class="fi" id="m-notas" rows="2" placeholder="Detalles adicionales..." style="resize:vertical"></textarea></div>
+    <div style="font-size:11px;color:var(--mut);margin-top:4px"><i class="ti ti-user" style="font-size:10px"></i> Asignada por <strong>${currentUser?.name||'—'}</strong></div>`};},
   contacto: () => { currentModal='contacto'; return {t:'<i class="ti ti-user-plus"></i>Nuevo Contacto', b:`
     <div class="fr"><div class="fg"><div class="fl">Cliente *</div><input class="fi" id="m-cli" placeholder="Empresa"></div>
     <div class="fg"><div class="fl">Nombre *</div><input class="fi" id="m-nom" placeholder="Nombre contacto"></div></div>
@@ -2088,7 +2107,7 @@ async function saveModal(){
     toast('✓ Cliente actualizado');
   } else if(currentModal==='tarea'){
     const t=document.getElementById('m-titulo')?.value?.trim();if(!t){toast('⚠ Indica la tarea');return;}
-    DB.tareas.push({_id:nextId(DB.tareas),titulo:t,empresa:document.getElementById('m-empresa')?.value||'',responsable:document.getElementById('m-resp')?.value||'',prioridad:document.getElementById('m-prio')?.value||'Media',fecha:document.getElementById('m-fecha')?.value||'',done:false});
+    DB.tareas.push({_id:nextId(DB.tareas),titulo:t,empresa:document.getElementById('m-empresa')?.value||'',responsable:document.getElementById('m-resp')?.value||'',asignado_por:currentUser?.name||'',notas:document.getElementById('m-notas')?.value||'',prioridad:document.getElementById('m-prio')?.value||'Media',fecha:document.getElementById('m-fecha')?.value||'',done:false});
     updateBadge(); toast('✓ Tarea guardada');
   } else if(currentModal==='contacto'){
     const cl=document.getElementById('m-cli')?.value?.trim();const nm=document.getElementById('m-nom')?.value?.trim();
@@ -2303,13 +2322,19 @@ async function saveMarcas(){
 
 function renderMarcas(){
   const año=new Date().getFullYear();
-  // Debug: log first marca to see structure
-  const sample=DB_MARCAS.find(m=>m.id);
-  if(sample) console.log('[MARCAS] Sample marca:',JSON.stringify(sample).slice(0,300));
-  console.log('[MARCAS] Total:',DB_MARCAS.length,'con id:',DB_MARCAS.filter(m=>m.id).length);
-  const totalV=DB_MARCAS.filter(m=>m!==DB_MARCAS._sobrestock).reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas&&m.ventas[mes]||0),0),0);
-  const totalP=DB_MARCAS.filter(m=>m!==DB_MARCAS._sobrestock).reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.previstos||{})[mes]||0),0),0);
-  const cumpl=totalP>0?Math.round(totalV/totalP*100):null;
+  const allM=DB_MARCAS.filter(m=>m.id);
+  // Calcular último mes con datos reales
+  const MESES_LARGO=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const lastMesIdx=MESES.reduce((last,mes,i)=>{
+    return allM.some(m=>((m.ventas||{})[mes]||0)>0)?i:last;
+  },-1);
+  const lastMesNombre=lastMesIdx>=0?MESES_LARGO[lastMesIdx]:'';
+  // Acumulado = solo meses hasta lastMesIdx
+  const acumMeses=lastMesIdx>=0?MESES.slice(0,lastMesIdx+1):[];
+  const acumV=acumMeses.reduce((a,mes)=>a+allM.reduce((s,m)=>s+((m.ventas||{})[mes]||0),0),0);
+  const acumP=acumMeses.reduce((a,mes)=>a+allM.reduce((s,m)=>s+((m.previstos||{})[mes]||0),0),0);
+  const acumPct=acumP>0?Math.round(acumV/acumP*100):null;
+  const totalP=allM.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.previstos||{})[mes]||0),0),0);
   document.getElementById('content').innerHTML=`
     <div class="ph">
       <div class="pt"><i class="ti ti-rosette"></i>Marcas &amp; Proveedores</div>
@@ -2319,11 +2344,12 @@ function renderMarcas(){
         <button class="btn btn-primary btn-sm" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
       </div>
     </div>
-    <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
-      <div class="kcard"><div class="kl">Activas <span style="font-size:10px;font-weight:400;color:var(--mut)">de ${DB_MARCAS.filter(m=>m.id).length}</span></div><div class="kv" style="color:var(--grn)">${DB_MARCAS.filter(m=>m.id&&m.activa!==false).length}</div></div>
-      <div class="kcard"><div class="kl">Neto Real acumulado</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Neto Previsto acumulado</div><div class="kv" style="color:var(--acc)">€${Math.round(totalP).toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Evolución</div><div class="kv" style="color:${cumpl===null?'var(--mut)':cumpl>=100?'var(--grn)':'var(--red)'}">${cumpl!==null?cumpl+'%':'—'}</div></div>
+    <div class="kgrid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="kcard"><div class="kl">Activas <span style="font-size:10px;font-weight:400;color:var(--mut)">de ${allM.length}</span></div><div class="kv" style="color:var(--grn)">${allM.filter(m=>m.activa!==false).length}</div></div>
+      <div class="kcard"><div class="kl">Neto Real${lastMesNombre?' hasta '+lastMesNombre:''}</div><div class="kv" style="color:var(--grn)">€${Math.round(acumV).toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Neto Previsto${lastMesNombre?' hasta '+lastMesNombre:''}</div><div class="kv" style="color:var(--acc)">€${Math.round(acumP).toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Evolución acumulada</div><div class="kv" style="color:${acumPct===null?'var(--mut)':acumPct>=100?'var(--grn)':'var(--red)'}">${acumPct!==null?acumPct+'%':'—'}</div></div>
+      <div class="kcard"><div class="kl">Neto Previsto anual</div><div class="kv" style="color:var(--mut)">€${Math.round(totalP).toLocaleString()}</div></div>
     </div>
     <!-- Importador -->
     <div id="marcas-xl-panel" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
@@ -2406,9 +2432,9 @@ function renderMarcasTable(list){
     return`<th style="text-align:center;background:${bg};border-left:1px solid #D4DCE8;opacity:${textOp};min-width:72px;padding:0">
       <div style="padding:3px 4px;font-size:9px;font-weight:700;color:#18243A;border-bottom:0.5px solid #D4DCE8">${mes}</div>
       <div style="display:flex">
-        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#0A6E50;padding:2px 3px;border-right:0.5px solid #E8EDF5">N.REAL</div>
         <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#1558B0;padding:2px 3px;border-right:0.5px solid #E8EDF5">N.PREV</div>
-        <div style="width:32px;text-align:right;font-size:8px;font-weight:700;color:#6878A0;padding:2px 3px">EVL%</div>
+        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#0A6E50;padding:2px 3px;border-right:0.5px solid #E8EDF5">N.REAL</div>
+        <div style="width:26px;text-align:right;font-size:8px;font-weight:700;color:#6878A0;padding:2px 3px">EVL%</div>
       </div>
     </th>`;
   }).join('');
@@ -2422,6 +2448,9 @@ function renderMarcasTable(list){
     const acumPct=acumP>0?acumV/acumP*100:null;
     const ultMesAcum=mesConDatos.length?MESES_LARGO[MESES.indexOf(mesConDatos[mesConDatos.length-1])]:'';
     const acumColor=pctColor(acumPct);
+    // Progress bar: acumV vs acumP
+    const barW=acumP>0?Math.min(100,Math.round(acumV/acumP*100)):0;
+    const barColor=acumPct===null?'#D4DCE8':acumPct>=100?'#0A6E50':acumPct>=75?'#8F5C00':'#9B2020';
 
     const mesCells=MESES.map((mes,i)=>{
       const vr=v[mes]||0, vp=p[mes]||0;
@@ -2431,8 +2460,8 @@ function renderMarcasTable(list){
       const rColor=vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8';
       return`<td style="${bg}border-left:1px solid #D4DCE8;padding:0">
         <div style="display:flex">
-          <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${rColor};cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')">${fmtE(vr)}</div>
           <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;color:#1558B0;cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')">${fmtE(vp)}</div>
+          <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${rColor};cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')">${fmtE(vr)}</div>
           <div style="width:26px;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${pctColor(pct)}">${pctFmt(pct)}</div>
         </div>
       </td>`;
@@ -2442,8 +2471,16 @@ function renderMarcasTable(list){
       <td style="position:sticky;left:0;background:#fff;z-index:1;padding:0;width:28px;border-right:none">
         <div style="padding:5px 6px;text-align:center"><input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()"></div>
       </td>
-      <td style="position:sticky;left:28px;background:#fff;z-index:1;border-right:1.5px solid #D4DCE8;padding:5px 10px;font-size:11.5px;font-weight:700;white-space:nowrap;min-width:140px">
-        ${m.nombre}${m.activa===false?' <span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:4px;font-weight:400">inactiva</span>':''}
+      <td style="position:sticky;left:28px;background:#fff;z-index:1;border-right:1.5px solid #D4DCE8;padding:4px 10px;min-width:160px">
+        <div style="font-size:11.5px;font-weight:700;white-space:nowrap;margin-bottom:3px">
+          ${m.nombre}${m.activa===false?' <span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:4px;font-weight:400">inactiva</span>':''}
+        </div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <div style="flex:1;height:5px;background:#E8EDF5;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${barW}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
+          </div>
+          <div style="font-size:9px;font-weight:700;color:${barColor};min-width:28px;text-align:right">${acumPct!==null?Math.round(acumPct)+'%':'—'}</div>
+        </div>
       </td>
       ${mesCells}
       <td style="border-left:2px solid #D4DCE8;background:#EEF5FC;padding:0;min-width:110px">
@@ -2489,16 +2526,16 @@ function renderMarcasTable(list){
           <th style="background:#EEF5FC;border-left:2px solid #D4DCE8;border-bottom:1.5px solid #D4DCE8;min-width:110px;padding:0;text-align:center">
             <div style="padding:4px 6px;font-size:10px;font-weight:700;color:#1558B0;border-bottom:0.5px solid #C4CEDF">TOTAL ANUAL</div>
             <div style="display:flex">
-              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #C4CEDF">N.REAL</div>
               <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#1558B0;padding:3px 4px;border-right:0.5px solid #C4CEDF">N.PREV</div>
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #C4CEDF">N.REAL</div>
               <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#6878A0;padding:2px 3px">EVL%</div>
             </div>
           </th>
           <th style="background:#D1FAE5;border-left:2px solid #D4DCE8;border-bottom:1.5px solid #D4DCE8;min-width:130px;padding:0;text-align:center">
             <div style="padding:4px 6px;font-size:10px;font-weight:700;color:#065F46;border-bottom:0.5px solid #A7F3D0">ACUMULADO${lastMesNombre?' hasta '+lastMesNombre:''}</div>
             <div style="display:flex">
-              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #A7F3D0">N.REAL</div>
               <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#1558B0;padding:3px 4px;border-right:0.5px solid #A7F3D0">N.PREV</div>
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #A7F3D0">N.REAL</div>
               <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#065F46;padding:3px 4px">EVL%</div>
             </div>
           </th>
@@ -2561,14 +2598,14 @@ function renderSobrestock(){
   const campos=[
     {key:'coste',label:'Sobrestock valor a coste',color:'var(--amb)'},
     {key:'vendido',label:'Sobrestock valor vendido',color:'var(--acc)'},
-    {key:'saldo',label:'Saldo (coste − vendido)',color:'var(--grn)',calc:true},
+    {key:'saldo',label:'Saldo (vendido − coste)',color:'var(--grn)',calc:true},
   ];
   tbody.innerHTML=campos.map(({key,label,color,calc})=>{
-    const totVal=MESES.reduce((a,m)=>a+(calc?((sob[m]?.coste||0)-(sob[m]?.vendido||0)):(sob[m]?.[key]||0)),0);
+    const totVal=MESES.reduce((a,m)=>a+(calc?((sob[m]?.vendido||0)-(sob[m]?.coste||0)):(sob[m]?.[key]||0)),0);
     return`<tr style="background:${calc?'#F0FDF4':''}">
       <td style="font-size:11px;font-weight:700;padding:3px 10px;color:${color}">${label}</td>
       ${MESES.map(mes=>{
-        const val=calc?((sob[mes]?.coste||0)-(sob[mes]?.vendido||0)):(sob[mes]?.[key]||0);
+        const val=calc?((sob[mes]?.vendido||0)-(sob[mes]?.coste||0)):(sob[mes]?.[key]||0);
         return`<td style="text-align:right;font-size:10px;padding:3px 6px;border-left:1px solid var(--brd);${calc?'font-weight:700;color:'+color:''};cursor:${calc?'default':'pointer'}"
           ${calc?'':` onclick="editSobrestock('${mes}','${key}')"`}>${fmtE(val)}</td>`;
       }).join('')}
@@ -2603,7 +2640,7 @@ async function saveSobrestock(mes,campo){
   if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
   if(!DB_MARCAS._sobrestock[mes]) DB_MARCAS._sobrestock[mes]={coste:0,vendido:0,saldo:0};
   DB_MARCAS._sobrestock[mes][campo]=val;
-  DB_MARCAS._sobrestock[mes].saldo=(DB_MARCAS._sobrestock[mes].coste||0)-(DB_MARCAS._sobrestock[mes].vendido||0);
+  DB_MARCAS._sobrestock[mes].saldo=(DB_MARCAS._sobrestock[mes].vendido||0)-(DB_MARCAS._sobrestock[mes].coste||0);
   document.getElementById('sob-bg')?.remove();
   await saveMarcas();
   renderSobrestock();
@@ -2772,7 +2809,7 @@ async function importarMarcasXL(){
     if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
     Object.entries(sobData).forEach(([mes,vals])=>{
       DB_MARCAS._sobrestock[mes]=Object.assign({coste:0,vendido:0,saldo:0},vals);
-      DB_MARCAS._sobrestock[mes].saldo=(DB_MARCAS._sobrestock[mes].coste||0)-(DB_MARCAS._sobrestock[mes].vendido||0);
+      DB_MARCAS._sobrestock[mes].saldo=(DB_MARCAS._sobrestock[mes].vendido||0)-(DB_MARCAS._sobrestock[mes].coste||0);
     });
   }
 
@@ -4518,6 +4555,325 @@ async function cerrarSesionDe(nombre){
     toast(`✓ Sesión de ${nombre} cerrada`);
     renderTrabajadores();
   }
+}
+
+// ══════════════════════════════════════════════════════
+//  PAQUETERÍA — Registro de envíos
+// ══════════════════════════════════════════════════════
+const PAQ_KEY = 'inasa_paqueteria_v1';
+let DB_PAQ = [];
+
+async function loadPaqueteria(){
+  try{
+    const r = await window.storage.get(PAQ_KEY, true);
+    if(r) DB_PAQ = JSON.parse(r.value);
+    else DB_PAQ = [];
+  }catch(e){ DB_PAQ = []; }
+}
+async function savePaqueteria(){
+  try{ await window.storage.set(PAQ_KEY, JSON.stringify(DB_PAQ), true); }catch(e){}
+}
+
+function abrirPaqueteria(){
+  const trabajadores = DB_TRABAJADORES.map(t=>t.nombre).filter(Boolean).sort();
+  const clientes = [...new Set(DB.clientes.map(c=>c.nombre))].sort();
+
+  document.body.insertAdjacentHTML('beforeend', `
+  <div id="paq-bg" style="position:fixed;inset:0;background:rgba(10,18,40,.6);z-index:9999;display:flex;flex-direction:column;align-items:stretch;padding:20px;overflow:hidden">
+    <div style="background:var(--sur);border-radius:16px;display:flex;flex-direction:column;flex:1;overflow:hidden;max-height:100%">
+
+      <!-- Header -->
+      <div style="padding:14px 20px;background:linear-gradient(135deg,var(--acc),#0A5EA0);color:#fff;border-radius:16px 16px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div style="font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px"><i class="ti ti-truck-delivery"></i> Registro de Paquetería</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button onclick="abrirNuevoEnvio()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:5px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px"><i class="ti ti-plus"></i> Nuevo envío</button>
+          <button onclick="abrirImportPaq()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:5px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px"><i class="ti ti-file-spreadsheet"></i> Importar Excel</button>
+          <button onclick="document.getElementById('paq-bg').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:15px"><i class="ti ti-x"></i></button>
+        </div>
+      </div>
+
+      <!-- Filtros -->
+      <div style="padding:10px 20px;background:#F7F9FD;border-bottom:1px solid var(--brd);flex-shrink:0;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input id="paq-f-cliente" class="fi" placeholder="Buscar cliente..." style="width:160px;padding:5px 10px" oninput="renderPaqTable()">
+        <input id="paq-f-empresa" class="fi" placeholder="Empresa envío..." style="width:140px;padding:5px 10px" oninput="renderPaqTable()">
+        <input id="paq-f-desde" class="fi" type="date" style="padding:5px 8px" oninput="renderPaqTable()">
+        <input id="paq-f-hasta" class="fi" type="date" style="padding:5px 8px" oninput="renderPaqTable()">
+        <button onclick="limpiarFiltrosPaq()" class="btn btn-sm" style="padding:4px 10px"><i class="ti ti-x"></i> Limpiar</button>
+        <span id="paq-count" style="font-size:11px;color:var(--mut);margin-left:auto"></span>
+      </div>
+
+      <!-- Import panel -->
+      <div id="paq-import-panel" style="display:none;padding:10px 20px;background:#FFFBEB;border-bottom:1px solid #FDE68A;flex-shrink:0">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">Importar Excel — columnas: FECHA · FECHA ENTREGA · CLIENTE · COMPRADOR · MUESTRAS · BULTOS · EMPRESA DE ENVÍO · COSTE · ENVIADO POR</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="file" id="paq-xl-input" accept=".xlsx,.xls" style="display:none" onchange="handlePaqXL(event)">
+          <button class="btn btn-sm" onclick="document.getElementById('paq-xl-input').click()"><i class="ti ti-upload"></i> Seleccionar archivo</button>
+          <span id="paq-xl-status" style="font-size:11px;color:var(--mut)">Sin archivo</span>
+          <button class="btn btn-sm" onclick="document.getElementById('paq-import-panel').style.display='none'" style="margin-left:auto">Cerrar</button>
+        </div>
+      </div>
+
+      <!-- Tabla -->
+      <div style="flex:1;overflow-y:auto;overflow-x:auto">
+        <table id="paq-table" style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead style="position:sticky;top:0;z-index:2">
+            <tr style="background:#F3F6FB">
+              <th style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:90px">FECHA</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:90px">F.ENTREGA</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:130px">CLIENTE</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:120px">COMPRADOR</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:140px">MUESTRAS</th>
+              <th style="padding:8px 10px;text-align:right;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:60px">BULTOS</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:120px">EMPRESA ENVÍO</th>
+              <th style="padding:8px 10px;text-align:right;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:90px">COSTE s/IVA</th>
+              <th style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--brd);white-space:nowrap;font-size:11px;min-width:110px">ENVIADO POR</th>
+              <th style="width:50px;border-bottom:1.5px solid var(--brd)"></th>
+            </tr>
+          </thead>
+          <tbody id="paq-tbody"></tbody>
+        </table>
+        <div id="paq-empty" style="display:none;padding:40px;text-align:center;color:var(--mut);font-size:13px"><i class="ti ti-package-off" style="font-size:32px;display:block;margin-bottom:8px"></i>Sin registros de envíos</div>
+      </div>
+
+      <!-- Footer totales -->
+      <div id="paq-footer" style="padding:8px 20px;background:#F3F6FB;border-top:1.5px solid var(--brd);flex-shrink:0;display:flex;gap:20px;font-size:11px;font-weight:600;color:var(--txt)"></div>
+    </div>
+  </div>`);
+
+  renderPaqTable();
+  setTimeout(()=>makeResizableAll&&makeResizableAll(),50);
+}
+
+function renderPaqTable(){
+  const tbody=document.getElementById('paq-tbody');
+  const empty=document.getElementById('paq-empty');
+  const footer=document.getElementById('paq-footer');
+  const cnt=document.getElementById('paq-count');
+  if(!tbody) return;
+
+  const fCli=(document.getElementById('paq-f-cliente')?.value||'').toLowerCase().trim();
+  const fEmp=(document.getElementById('paq-f-empresa')?.value||'').toLowerCase().trim();
+  const fDesde=document.getElementById('paq-f-desde')?.value||'';
+  const fHasta=document.getElementById('paq-f-hasta')?.value||'';
+
+  let list=[...DB_PAQ].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  if(fCli) list=list.filter(e=>(e.cliente||'').toLowerCase().includes(fCli)||(e.comprador||'').toLowerCase().includes(fCli));
+  if(fEmp) list=list.filter(e=>(e.empresa_envio||'').toLowerCase().includes(fEmp));
+  if(fDesde) list=list.filter(e=>e.fecha>=fDesde);
+  if(fHasta) list=list.filter(e=>e.fecha<=fHasta);
+
+  if(!list.length){
+    tbody.innerHTML=''; empty.style.display='block';
+    if(footer) footer.innerHTML='';
+    if(cnt) cnt.textContent='0 envíos';
+    return;
+  }
+  empty.style.display='none';
+  if(cnt) cnt.textContent=`${list.length} envío${list.length>1?'s':''}`;
+
+  const fmtFecha=f=>f?f.split('-').reverse().join('/'):'—';
+  const fmtE=v=>v?parseFloat(v).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+'€':'—';
+
+  tbody.innerHTML=list.map(e=>`
+    <tr style="border-bottom:0.5px solid var(--brd)" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+      <td style="padding:7px 10px;white-space:nowrap">${fmtFecha(e.fecha)}</td>
+      <td style="padding:7px 10px;white-space:nowrap;color:var(--mut)">${fmtFecha(e.fecha_entrega)}</td>
+      <td style="padding:7px 10px;font-weight:600">${e.cliente||'—'}</td>
+      <td style="padding:7px 10px;color:var(--mut)">${e.comprador||'—'}</td>
+      <td style="padding:7px 10px;font-size:11px">${e.muestras||'—'}</td>
+      <td style="padding:7px 10px;text-align:right;font-weight:600">${e.bultos||'—'}</td>
+      <td style="padding:7px 10px"><span style="background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600">${e.empresa_envio||'—'}</span></td>
+      <td style="padding:7px 10px;text-align:right;color:var(--grn);font-weight:600">${fmtE(e.coste)}</td>
+      <td style="padding:7px 10px;color:var(--mut);font-size:11px">${e.enviado_por||'—'}</td>
+      <td style="padding:7px 10px;text-align:center;white-space:nowrap">
+        <button class="bico e" onclick="editarEnvio('${e._id}')" style="width:22px;height:22px;font-size:11px"><i class="ti ti-pencil"></i></button>
+        <button class="bico d" onclick="eliminarEnvio('${e._id}')" style="width:22px;height:22px;font-size:11px"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`).join('');
+
+  // Totales footer
+  const totBultos=list.reduce((a,e)=>a+(parseFloat(e.bultos)||0),0);
+  const totCoste=list.reduce((a,e)=>a+(parseFloat(e.coste)||0),0);
+  if(footer) footer.innerHTML=`
+    <span>Total envíos: <strong>${list.length}</strong></span>
+    <span style="color:var(--mut)">|</span>
+    <span>Bultos: <strong>${totBultos}</strong></span>
+    <span style="color:var(--mut)">|</span>
+    <span>Coste total s/IVA: <strong style="color:var(--grn)">${totCoste.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})}€</strong></span>`;
+}
+
+function limpiarFiltrosPaq(){
+  ['paq-f-cliente','paq-f-empresa','paq-f-desde','paq-f-hasta'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  renderPaqTable();
+}
+
+function abrirNuevoEnvio(id){
+  const e=id?DB_PAQ.find(x=>x._id===id):{};
+  const isNew=!id;
+  const trabajadores=DB_TRABAJADORES.map(t=>t.nombre).filter(Boolean).sort();
+  const clientes=[...new Set(DB.clientes.map(c=>c.nombre))].sort();
+  const html=`
+  <div id="envio-bg" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--sur);border-radius:14px;padding:0;width:520px;max-width:96vw;box-shadow:0 16px 50px rgba(0,0,0,.25);overflow:hidden">
+      <div style="padding:14px 20px;background:linear-gradient(135deg,var(--acc),#0A5EA0);color:#fff;font-size:14px;font-weight:700">
+        <i class="ti ti-truck-delivery"></i> ${isNew?'Nuevo envío':'Editar envío'}
+      </div>
+      <div style="padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;gap:10px">
+          <div class="fg"><div class="fl">Fecha envío *</div><input class="fi" id="env-fecha" type="date" value="${e.fecha||new Date().toISOString().slice(0,10)}"></div>
+          <div class="fg"><div class="fl">Fecha entrega</div><input class="fi" id="env-fecha-ent" type="date" value="${e.fecha_entrega||''}"></div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div class="fg"><div class="fl">Cliente *</div>
+            <input class="fi" id="env-cliente" list="env-cli-list" value="${e.cliente||''}" placeholder="Cliente">
+            <datalist id="env-cli-list">${clientes.map(c=>`<option value="${c}">`).join('')}</datalist>
+          </div>
+          <div class="fg"><div class="fl">Comprador / Contacto</div><input class="fi" id="env-comprador" value="${e.comprador||''}" placeholder="Nombre comprador"></div>
+        </div>
+        <div class="fg"><div class="fl">Muestras / Contenido</div><input class="fi" id="env-muestras" value="${e.muestras||''}" placeholder="Descripción del contenido"></div>
+        <div style="display:flex;gap:10px">
+          <div class="fg"><div class="fl">Bultos</div><input class="fi" id="env-bultos" type="number" min="0" value="${e.bultos||''}" placeholder="0"></div>
+          <div class="fg"><div class="fl">Empresa de envío</div><input class="fi" id="env-empresa" list="env-emp-list" value="${e.empresa_envio||''}" placeholder="MRW, SEUR...">
+            <datalist id="env-emp-list"><option value="MRW"><option value="SEUR"><option value="DHL"><option value="UPS"><option value="Correos Express"><option value="GLS"><option value="DPD"></datalist>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div class="fg"><div class="fl">Coste s/IVA (€)</div><input class="fi" id="env-coste" type="number" step="0.01" min="0" value="${e.coste||''}" placeholder="0.00"></div>
+          <div class="fg"><div class="fl">Enviado por</div>
+            <select class="fi" id="env-enviado">
+              <option value="">— Seleccionar —</option>
+              ${trabajadores.map(n=>`<option value="${n}" ${e.enviado_por===n?'selected':''}>${n}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--brd)">
+          <button onclick="document.getElementById('envio-bg').remove()" style="padding:7px 16px;border-radius:8px;border:1.5px solid var(--brd);background:var(--sur);cursor:pointer;font-weight:600">Cancelar</button>
+          <button onclick="guardarEnvio('${id||''}')" style="padding:7px 18px;border-radius:8px;border:none;background:var(--acc);color:#fff;cursor:pointer;font-weight:700"><i class="ti ti-check"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  setTimeout(()=>document.getElementById('env-cliente')?.focus(),50);
+}
+
+async function guardarEnvio(id){
+  const cliente=document.getElementById('env-cliente')?.value.trim();
+  if(!cliente){toast('⚠ El cliente es obligatorio');return;}
+  const obj={
+    _id: id||('paq_'+Date.now()),
+    fecha:          document.getElementById('env-fecha')?.value||'',
+    fecha_entrega:  document.getElementById('env-fecha-ent')?.value||'',
+    cliente,
+    comprador:      document.getElementById('env-comprador')?.value.trim()||'',
+    muestras:       document.getElementById('env-muestras')?.value.trim()||'',
+    bultos:         parseFloat(document.getElementById('env-bultos')?.value)||0,
+    empresa_envio:  document.getElementById('env-empresa')?.value.trim()||'',
+    coste:          parseFloat(document.getElementById('env-coste')?.value)||0,
+    enviado_por:    document.getElementById('env-enviado')?.value||'',
+  };
+  if(id) { const idx=DB_PAQ.findIndex(x=>x._id===id); if(idx>=0) DB_PAQ[idx]=obj; else DB_PAQ.push(obj); }
+  else DB_PAQ.push(obj);
+  document.getElementById('envio-bg')?.remove();
+  await savePaqueteria();
+  renderPaqTable();
+  toast('✓ Envío guardado');
+}
+
+function editarEnvio(id){ abrirNuevoEnvio(id); }
+
+async function eliminarEnvio(id){
+  if(!confirm('¿Eliminar este envío?')) return;
+  DB_PAQ=DB_PAQ.filter(x=>x._id!==id);
+  await savePaqueteria();
+  renderPaqTable();
+  toast('✓ Envío eliminado');
+}
+
+function abrirImportPaq(){
+  const p=document.getElementById('paq-import-panel');
+  if(p) p.style.display=p.style.display==='none'?'block':'none';
+}
+
+function handlePaqXL(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const status=document.getElementById('paq-xl-status');
+  status.textContent='⏳ Cargando...';
+  ensureXLSX().then(()=>{
+    const reader=new FileReader();
+    reader.onload=async function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        if(!rows.length){status.textContent='⚠ Sin datos';return;}
+        // Detect header row
+        const COL_MAP={
+          fecha:['fecha','date','f.envio','fecha envio'],
+          fecha_entrega:['fecha entrega','f.entrega','entrega','delivery'],
+          cliente:['cliente','client','empresa','company'],
+          comprador:['comprador','buyer','contacto'],
+          muestras:['muestras','contenido','descripcion','samples'],
+          bultos:['bultos','paquetes','packages','qty'],
+          empresa_envio:['empresa de envio','empresa envio','transportista','courier'],
+          coste:['coste','coste (sin iva)','cost','importe','precio'],
+          enviado_por:['enviado por','sent by','responsable'],
+        };
+        const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,' ').trim();
+        let hdrIdx=0;
+        for(let i=0;i<Math.min(5,rows.length);i++){
+          if(rows[i].some(v=>Object.values(COL_MAP).some(keys=>keys.some(k=>norm(v).includes(k))))){hdrIdx=i;break;}
+        }
+        const hdrs=rows[hdrIdx].map(h=>norm(h));
+        const findCol=keys=>hdrs.findIndex(h=>keys.some(k=>h.includes(k)));
+        const idx={
+          fecha:      findCol(COL_MAP.fecha),
+          fecha_ent:  findCol(COL_MAP.fecha_entrega),
+          cliente:    findCol(COL_MAP.cliente),
+          comprador:  findCol(COL_MAP.comprador),
+          muestras:   findCol(COL_MAP.muestras),
+          bultos:     findCol(COL_MAP.bultos),
+          empresa:    findCol(COL_MAP.empresa_envio),
+          coste:      findCol(COL_MAP.coste),
+          enviado:    findCol(COL_MAP.enviado_por),
+        };
+        const parseFecha=v=>{
+          if(!v) return '';
+          if(typeof v==='number'){ const d=new Date(Math.round((v-25569)*86400*1000)); return d.toISOString().slice(0,10); }
+          const s=String(v).trim();
+          // Try DD/MM/YYYY or YYYY-MM-DD
+          const m1=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+          if(m1) return `${m1[3].length===2?'20'+m1[3]:m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
+          if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+          return '';
+        };
+        let added=0;
+        rows.slice(hdrIdx+1).forEach(row=>{
+          const cli=String(row[idx.cliente]||'').trim();
+          if(!cli) return;
+          DB_PAQ.push({
+            _id:'paq_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+            fecha:        parseFecha(row[idx.fecha]),
+            fecha_entrega:parseFecha(row[idx.fecha_ent]),
+            cliente:      cli,
+            comprador:    String(row[idx.comprador]||'').trim(),
+            muestras:     String(row[idx.muestras]||'').trim(),
+            bultos:       parseFloat(row[idx.bultos])||0,
+            empresa_envio:String(row[idx.empresa]||'').trim(),
+            coste:        parseFloat(String(row[idx.coste]||'0').replace(/[^0-9.,]/g,'').replace(',','.'))||0,
+            enviado_por:  String(row[idx.enviado]||'').trim(),
+          });
+          added++;
+        });
+        await savePaqueteria();
+        renderPaqTable();
+        status.textContent=`✓ ${added} envíos importados`;
+        toast(`✓ ${added} envíos importados`);
+      }catch(err){status.textContent='⚠ Error: '+err.message;console.error(err);}
+    };
+    reader.readAsArrayBuffer(file);
+  }).catch(err=>{status.textContent='⚠ '+err.message;});
 }
 
 bootApp();
