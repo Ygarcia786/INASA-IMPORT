@@ -569,11 +569,19 @@ function renderCliGrid(list) {
     const ini = c.nombre.split(/[\s_-]/).map(w=>w[0]).join('').slice(0,3).toUpperCase();
     const tot = c.ventas.reduce((a,v)=>a+(v.importe||0),0);
     // próximas promociones de este cliente
-    const proxP = DB_PROMOS.filter(p=>{
-      if(p.cliente !== c.nombre) return false;
+    // próximas promociones de este cliente — deduplicadas por mes+marca+tematica
+    const proxPAll = DB_PROMOS.filter(p=>{
+      if((p.cliente||'').trim().toLowerCase() !== c.nombre.trim().toLowerCase()) return false;
       const idx = MESES_FULL.indexOf((p.mes||'').toUpperCase());
       return idx >= mesActualIdx;
-    }).slice(0,3);
+    });
+    // Deduplicar: una sola entrada por mes+marca+tematica
+    const seen = new Set();
+    const proxP = proxPAll.filter(p=>{
+      const key = `${(p.mes||'').toUpperCase()}|${(p.marca||'').toUpperCase()}|${(p.tematica||'').toUpperCase()}`;
+      if(seen.has(key)) return false;
+      seen.add(key); return true;
+    }).slice(0,4);
     return `<div class="ccard">
       <div class="chead">
         <div class="cav">${ini}</div>
@@ -2471,15 +2479,15 @@ function renderMarcasTable(list){
       <td style="position:sticky;left:0;background:#fff;z-index:1;padding:0;width:28px;border-right:none">
         <div style="padding:5px 6px;text-align:center"><input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()"></div>
       </td>
-      <td style="position:sticky;left:28px;background:#fff;z-index:1;border-right:1.5px solid #D4DCE8;padding:4px 10px;min-width:160px">
-        <div style="font-size:11.5px;font-weight:700;white-space:nowrap;margin-bottom:3px">
+      <td style="position:sticky;left:28px;background:#fff;z-index:1;border-right:1.5px solid #D4DCE8;padding:6px 10px;min-width:170px;max-width:200px">
+        <div style="font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px">
           ${m.nombre}${m.activa===false?' <span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:4px;font-weight:400">inactiva</span>':''}
         </div>
         <div style="display:flex;align-items:center;gap:5px">
-          <div style="flex:1;height:5px;background:#E8EDF5;border-radius:3px;overflow:hidden">
-            <div style="height:100%;width:${barW}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
+          <div style="flex:1;height:6px;background:#E8EDF5;border-radius:3px;overflow:hidden;min-width:60px">
+            <div style="height:100%;width:${barW}%;background:${barColor};border-radius:3px"></div>
           </div>
-          <div style="font-size:9px;font-weight:700;color:${barColor};min-width:28px;text-align:right">${acumPct!==null?Math.round(acumPct)+'%':'—'}</div>
+          <div style="font-size:9px;font-weight:700;color:${barColor};white-space:nowrap">${acumPct!==null?Math.round(acumPct)+'%':'—'}</div>
         </div>
       </td>
       ${mesCells}
@@ -2489,8 +2497,8 @@ function renderMarcasTable(list){
             const totV=MESES.reduce((s,mes)=>s+(v[mes]||0),0);
             const totP=MESES.reduce((s,mes)=>s+(p[mes]||0),0);
             const totPct=totP>0&&totV>0?totV/totP*100:null;
-            return`<div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:${totV>0&&totP>0?(totV>=totP?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #C4CEDF">${fmtE(totV)}</div>
-                   <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #C4CEDF">${fmtE(totP)}</div>
+            return`<div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #C4CEDF">${fmtE(totP)}</div>
+                   <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:${totV>0&&totP>0?(totV>=totP?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #C4CEDF">${fmtE(totV)}</div>
                    <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:700;color:${pctColor(totPct)}">${pctFmt(totPct)}</div>`;
           })()}
         </div>
@@ -2556,9 +2564,9 @@ function renderMarcasTable(list){
             const isPast=i<=lastMesIdx;
             return`<td style="border-left:1px solid #D4DCE8;padding:0;${isPast?'':'background:#FAFBFD;'}">
               <div style="display:flex">
-                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #D4DCE8">${fmtE(vr)}</div>
                 <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #D4DCE8">${fmtE(vp)}</div>
-                <div style="width:32px;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #D4DCE8">${fmtE(vr)}</div>
+                <div style="width:26px;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
               </div>
             </td>`;
           }).join('')}
@@ -2568,8 +2576,8 @@ function renderMarcasTable(list){
             const pct=totP>0&&totV>0?totV/totP*100:null;
             return`<td style="border-left:2px solid #D4DCE8;background:#EEF5FC;padding:0">
               <div style="display:flex">
-                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${totV>=totP?'#0A6E50':'#9B2020'};border-right:0.5px solid #C4CEDF">${fmtE(totV)}</div>
                 <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #C4CEDF">${fmtE(totP)}</div>
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${totV>=totP?'#0A6E50':'#9B2020'};border-right:0.5px solid #C4CEDF">${fmtE(totV)}</div>
                 <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
               </div>
             </td>`;
