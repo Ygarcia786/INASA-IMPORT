@@ -41,8 +41,14 @@
       <div class="presence-avatars" id="presence-avatars"></div>
       <span class="presence-count" id="presence-count">—</span>
     </div>
-    <div class="save-indicator"><div class="save-dot" id="sdot"></div><span id="slbl">Guardado</span></div>
-    <button class="btn btn-sm" onclick="forceRefresh()" title="Guardar y refrescar todos los datos" style="gap:5px"><i class="ti ti-refresh"></i>Refrescar</button>
+    <!-- Usuario actual + cerrar sesión -->
+    <div id="current-user-chip" style="display:none;align-items:center;gap:5px;padding:3px 8px 3px 4px;border-radius:20px;border:1.5px solid var(--brd);background:var(--sur);font-size:11px;font-weight:600;color:var(--txt);cursor:pointer" onclick="cerrarSesion()" title="Cerrar sesión">
+      <div id="current-user-av" style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff"></div>
+      <span id="current-user-name"></span>
+      <i class="ti ti-logout" style="font-size:12px;color:var(--mut)"></i>
+    </div>
+    <div class="save-indicator"><div class="save-dot" id="sdot"></div></div>
+    <button class="btn btn-sm" onclick="forceRefresh()" title="Refrescar" style="padding:4px 7px"><i class="ti ti-refresh"></i></button>
     <button class="btn btn-sm" onclick="exportData()" title="Exportar" style="padding:4px 7px"><i class="ti ti-download"></i></button>
     <button class="btn btn-sm btn-green" onclick="openModal('import')" title="Importar contactos" style="padding:4px 7px"><i class="ti ti-file-spreadsheet"></i></button>
     <button class="btn btn-sm" onclick="abrirConfiguracion()" title="Configuración" style="padding:4px 7px"><i class="ti ti-settings"></i></button>
@@ -4125,6 +4131,7 @@ function entrarComoAdmin(e) {
   localStorage.setItem(LPREF_USER_NAME, 'Administrador');
   document.getElementById('user-select-bg').classList.remove('on');
   applyConfig(loadUserConfig());
+  updateUserChip();
   bootPresence();
 }
 
@@ -4154,6 +4161,7 @@ function confirmUserSelection() {
   localStorage.setItem(LPREF_USER_NAME, t.nombre);
   document.getElementById('user-select-bg').classList.remove('on');
   applyConfig(loadUserConfig());
+  updateUserChip();
   bootPresence();
 }
 
@@ -4334,6 +4342,42 @@ async function bootApp() {
     if (currentView === 'promociones') renderView('promociones');
   }).catch(e => console.warn('Background load error:', e));
 }
+function updateUserChip(){
+  if(!currentUser) return;
+  const chip=document.getElementById('current-user-chip');
+  const av=document.getElementById('current-user-av');
+  const nm=document.getElementById('current-user-name');
+  if(!chip) return;
+  chip.style.display='flex';
+  av.style.background=currentUser.color;
+  av.textContent=currentUser.initials;
+  nm.textContent=currentUser.name;
+}
+
+async function cerrarSesion(){
+  await cerrarSesionDe(currentUser?.name);
+}
+
+async function cerrarSesionDe(nombre){
+  const esPropio=nombre===currentUser?.name;
+  if(!confirm(esPropio?'¿Cerrar tu sesión?':`¿Cerrar la sesión de ${nombre}?`)) return;
+  try{
+    const data=await readPresence();
+    delete data[nombre];
+    await writePresence(data);
+  }catch(e){}
+  if(esPropio){
+    currentUser=null;
+    clearInterval(presenceTimer);
+    const chip=document.getElementById('current-user-chip');
+    if(chip) chip.style.display='none';
+    showUserSelect();
+  } else {
+    toast(`✓ Sesión de ${nombre} cerrada`);
+    renderTrabajadores();
+  }
+}
+
 bootApp();
 
 // ══════════════════════════════════════════════════════
