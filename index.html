@@ -2276,19 +2276,37 @@ const MARCAS_DEFAULT = [
 ].map((nombre,i)=>({id:i+1,nombre,activa:true,notas:'',ventas:{}}));
 
 let DB_MARCAS = [];
+const MARCAS_SOB_KEY = 'inasa_marcas_sobrestock_v1';
+
 async function loadMarcas(){
   try{
     const r=await window.storage.get(MARCAS_KEY,true);
     if(r) DB_MARCAS=JSON.parse(r.value);
     else DB_MARCAS=JSON.parse(JSON.stringify(MARCAS_DEFAULT));
   }catch(e){ DB_MARCAS=JSON.parse(JSON.stringify(MARCAS_DEFAULT)); }
+  // Load sobrestock separately
+  try{
+    const s=await window.storage.get(MARCAS_SOB_KEY,true);
+    if(s) DB_MARCAS._sobrestock=JSON.parse(s.value);
+    else DB_MARCAS._sobrestock={};
+  }catch(e){ DB_MARCAS._sobrestock={}; }
 }
+
 async function saveMarcas(){
-  try{ await window.storage.set(MARCAS_KEY,JSON.stringify(DB_MARCAS),true); }catch(e){}
+  // Save sobrestock separately so it survives JSON.stringify of array
+  const sob=DB_MARCAS._sobrestock||{};
+  try{
+    await window.storage.set(MARCAS_SOB_KEY,JSON.stringify(sob),true);
+    await window.storage.set(MARCAS_KEY,JSON.stringify(DB_MARCAS),true);
+  }catch(e){}
 }
 
 function renderMarcas(){
   const año=new Date().getFullYear();
+  // Debug: log first marca to see structure
+  const sample=DB_MARCAS.find(m=>m.id);
+  if(sample) console.log('[MARCAS] Sample marca:',JSON.stringify(sample).slice(0,300));
+  console.log('[MARCAS] Total:',DB_MARCAS.length,'con id:',DB_MARCAS.filter(m=>m.id).length);
   const totalV=DB_MARCAS.filter(m=>m!==DB_MARCAS._sobrestock).reduce((a,m)=>a+MESES.reduce((s,mes)=>s+(m.ventas&&m.ventas[mes]||0),0),0);
   const totalP=DB_MARCAS.filter(m=>m!==DB_MARCAS._sobrestock).reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.previstos||{})[mes]||0),0),0);
   const cumpl=totalP>0?Math.round(totalV/totalP*100):null;
