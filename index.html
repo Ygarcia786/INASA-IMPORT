@@ -2538,7 +2538,11 @@ function renderMarcasTable(list){
   const acPct=acP>0?acV/acP*100:null;
 
   el.innerHTML=`<div style="background:#fff;border:1.5px solid #D4DCE8;border-radius:10px;overflow:hidden;margin-bottom:8px">
-    <div style="overflow-x:auto">
+    <!-- Barra de scroll superior espejo -->
+    <div id="marcas-scroll-top" style="overflow-x:auto;overflow-y:hidden;height:12px;border-bottom:1px solid #E8EDF5">
+      <div id="marcas-scroll-inner" style="height:1px"></div>
+    </div>
+    <div id="marcas-scroll-body" style="overflow-x:auto">
     <table style="border-collapse:collapse;width:100%;font-size:11px">
       <thead>
         <tr>
@@ -2609,6 +2613,19 @@ function renderMarcasTable(list){
     </table>
     </div>
   </div>`;
+
+  // Sync scroll top ↔ body
+  setTimeout(()=>{
+    const top=document.getElementById('marcas-scroll-top');
+    const body=document.getElementById('marcas-scroll-body');
+    const inner=document.getElementById('marcas-scroll-inner');
+    const tbl=body?.querySelector('table');
+    if(!top||!body||!tbl) return;
+    inner.style.width=tbl.scrollWidth+'px';
+    let syncing=false;
+    top.addEventListener('scroll',()=>{ if(syncing)return; syncing=true; body.scrollLeft=top.scrollLeft; syncing=false; });
+    body.addEventListener('scroll',()=>{ if(syncing)return; syncing=true; top.scrollLeft=body.scrollLeft; syncing=false; });
+  },80);
 
   if(elTot) elTot.innerHTML='';
 }
