@@ -308,22 +308,22 @@ let DB = initDB(); // populated async in bootApp()
 let saveTimer = null;
 async function save() {
   document.getElementById('sdot').className = 'save-dot saving';
-  document.getElementById('slbl').textContent = 'Guardando...';
+  (document.getElementById('slbl')||{}).textContent = 'Guardando...';
   clearTimeout(saveTimer);
   return new Promise((resolve) => {
     saveTimer = setTimeout(async () => {
       try {
         await window.storage.set(KEY, JSON.stringify(DB), true);
         document.getElementById('sdot').className = 'save-dot saved';
-        document.getElementById('slbl').textContent = 'Guardado ✓';
+        (document.getElementById('slbl')||{}).textContent = 'Guardado ✓';
         setTimeout(()=>{
           document.getElementById('sdot').className = 'save-dot';
-          document.getElementById('slbl').textContent = 'Guardado';
+          (document.getElementById('slbl')||{}).textContent = 'Guardado';
         }, 2000);
         writeActivity('guardando datos');
       } catch(e) {
         document.getElementById('sdot').className = 'save-dot error';
-        document.getElementById('slbl').textContent = 'Error al guardar';
+        (document.getElementById('slbl')||{}).textContent = 'Error al guardar';
         toast('⚠ Error al guardar.');
       }
       resolve();
@@ -415,8 +415,8 @@ async function forceRefresh() {
     await refreshAllData();
     renderView(currentView);
     document.getElementById('sdot').className = 'save-dot saved';
-    document.getElementById('slbl').textContent = 'Guardado ✓';
-    setTimeout(()=>{ document.getElementById('sdot').className='save-dot'; document.getElementById('slbl').textContent='Guardado'; }, 2000);
+    (document.getElementById('slbl')||{}).textContent = 'Guardado ✓';
+    setTimeout(()=>{ document.getElementById('sdot').className='save-dot'; (document.getElementById('slbl')||{}).textContent='Guardado'; }, 2000);
     toast('✓ Datos guardados y vista actualizada');
   } catch(e) {
     toast('⚠ Error al refrescar: ' + e.message);
@@ -2315,7 +2315,8 @@ function renderMarcas(){
       <div class="pt"><i class="ti ti-rosette"></i>Marcas &amp; Proveedores</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input class="fi" id="marca-search" placeholder="Buscar marca..." style="width:160px;padding:6px 10px" oninput="filterMarcas()">
-        <button class="btn btn-sm btn-green" onclick="openMarcasXL()"><i class="ti ti-file-spreadsheet"></i>Subir previstos</button>
+        <button class="btn btn-sm btn-green" onclick="openMarcasXL('previstos')"><i class="ti ti-target"></i>Subir previstos</button>
+        <button class="btn btn-sm" style="border-color:var(--grn);color:var(--grn)" onclick="openMarcasXL('ventas')"><i class="ti ti-chart-bar"></i>Subir ventas reales</button>
         <button class="btn btn-primary btn-sm" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
       </div>
     </div>
@@ -2387,8 +2388,14 @@ function renderMarcas(){
   setTimeout(()=>{ if(typeof makeResizableAll==='function') makeResizableAll(); else document.querySelectorAll('table').forEach(t=>{if(!t.dataset.rzbl){const ev=new Event('rzbl');t.dispatchEvent(ev);}});},50);
 }
 
-function openMarcasXL(){
+function openMarcasXL(campo='previstos'){
+  window.__marcasXLCampo__ = campo;
   const p=document.getElementById('marcas-xl-panel');
+  const title=document.getElementById('marcas-xl-title');
+  const hint=document.getElementById('marcas-xl-fmt-hint');
+  const esVentas=campo==='ventas';
+  if(title) title.innerHTML=`<i class="ti ti-file-spreadsheet"></i> Subir ${esVentas?'Ventas Reales':'Previstos'}`;
+  if(hint) hint.textContent=`Formato: CLIENTES | MARCAS | previsto neto | real neto | % — ${esVentas?'lee la columna real neto':'lee la columna previsto neto'} sumando todos los clientes por marca`;
   if(p) p.style.display='block';
 }
 
@@ -2640,19 +2647,23 @@ function handleMarcasXL(ev){
             if(!marcaData[marca]) marcaData[marca]={};
             Object.entries(mesCols).forEach(([mes,{p,r}])=>{
               const prev2=parseFloat(String(row[p]??0).replace(/[^0-9.-]/g,''))||0;
-              if(!marcaData[marca][mes]) marcaData[marca][mes]={prev:0};
+              const real2=parseFloat(String(row[r]??0).replace(/[^0-9.-]/g,''))||0;
+              if(!marcaData[marca][mes]) marcaData[marca][mes]={prev:0,real:0};
               marcaData[marca][mes].prev+=prev2;
+              marcaData[marca][mes].real+=real2;
             });
           }
         }
         const nM=Object.keys(marcaData).length;
         window.__marcasXLData__={marcaData,sobData};
         status.textContent=`✓ ${nM} marcas`;
+        const campo=window.__marcasXLCampo__||'previstos';
+        const esVentas=campo==='ventas';
         prev.innerHTML=`<div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:12px;font-size:12px">
           <div style="font-weight:700;color:var(--grn);margin-bottom:4px">✓ ${nM} marcas detectadas</div>
           <div style="color:var(--mut);margin-bottom:4px">${Object.keys(marcaData).slice(0,6).join(', ')}${nM>6?' ...':''}</div>
-          ${Object.keys(sobData).length?`<div style="color:var(--amb);font-weight:600;margin-bottom:8px">+ Sobrestock en ${Object.keys(sobData).length} meses</div>`:''}
-          <button class="btn btn-green btn-sm" onclick="importarMarcasXL()"><i class="ti ti-download"></i>Importar previstos (${nM} marcas)</button>
+          ${!esVentas&&Object.keys(sobData).length?`<div style="color:var(--amb);font-weight:600;margin-bottom:8px">+ Sobrestock en ${Object.keys(sobData).length} meses</div>`:''}
+          <button class="btn btn-green btn-sm" onclick="importarMarcasXL()"><i class="ti ti-download"></i>Importar ${esVentas?'ventas reales':'previstos'} (${nM} marcas)</button>
         </div>`;
       }catch(err){prev.innerHTML='<div style="color:var(--red)">⚠ Error: '+err.message+'</div>';}
     };
@@ -2663,28 +2674,36 @@ function handleMarcasXL(ev){
 async function importarMarcasXL(){
   const d=window.__marcasXLData__; if(!d) return;
   const {marcaData,sobData}=d;
+  const campo=window.__marcasXLCampo__||'previstos';
+  const esVentas=campo==='ventas';
   let matched=0,created=0;
   Object.entries(marcaData).forEach(([nombre,meses])=>{
-    const nombreUp = nombre.trim().toUpperCase();
-    // Exact match only — no partial to avoid wrong assignments
-    let m = DB_MARCAS.find(x=>x.id && x.nombre.trim().toUpperCase()===nombreUp);
+    const nombreUp=nombre.trim().toUpperCase();
+    let m=DB_MARCAS.find(x=>x.id&&x.nombre.trim().toUpperCase()===nombreUp);
     if(!m){
       const nextId=DB_MARCAS.filter(x=>x.id).length?Math.max(...DB_MARCAS.filter(x=>x.id).map(x=>x.id))+1:1;
       m={id:nextId,nombre:nombre.trim(),activa:true,notas:'',ventas:{},previstos:{}};
       DB_MARCAS.push(m); created++;
     } else { matched++; }
-    if(!m.previstos) m.previstos={};
-    Object.entries(meses).forEach(([mes,{prev}])=>{ if(prev>0) m.previstos[mes]=prev; });
+    if(esVentas){
+      if(!m.ventas) m.ventas={};
+      Object.entries(meses).forEach(([mes,{prev,real}])=>{ const v=real||prev||0; if(v>0) m.ventas[mes]=v; });
+    } else {
+      if(!m.previstos) m.previstos={};
+      Object.entries(meses).forEach(([mes,{prev}])=>{ if(prev>0) m.previstos[mes]=prev; });
+    }
   });
-  // Guardar sobrestock en todos los meses
-  if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
-  Object.entries(sobData).forEach(([mes,vals])=>{
-    DB_MARCAS._sobrestock[mes]=Object.assign({coste:0,vendido:0,saldo:0},vals);
-    DB_MARCAS._sobrestock[mes].saldo=(DB_MARCAS._sobrestock[mes].coste||0)-(DB_MARCAS._sobrestock[mes].vendido||0);
-  });
+  // Sobrestock solo al importar previstos
+  if(!esVentas && sobData){
+    if(!DB_MARCAS._sobrestock) DB_MARCAS._sobrestock={};
+    Object.entries(sobData).forEach(([mes,vals])=>{
+      DB_MARCAS._sobrestock[mes]=Object.assign({coste:0,vendido:0,saldo:0},vals);
+      DB_MARCAS._sobrestock[mes].saldo=(DB_MARCAS._sobrestock[mes].coste||0)-(DB_MARCAS._sobrestock[mes].vendido||0);
+    });
+  }
   await saveMarcas();
   document.getElementById('marcas-xl-panel').style.display='none';
-  toast(`✓ Previstos: ${matched} actualizadas · ${created} creadas`);
+  toast(`✓ ${esVentas?'Ventas':'Previstos'}: ${matched} actualizadas · ${created} creadas`);
   renderMarcas();
 }
 
@@ -4310,11 +4329,11 @@ function dismissBanner() {
 async function reloadFromRemote() {
   dismissBanner();
   document.getElementById('sdot').className = 'save-dot saving';
-  document.getElementById('slbl').textContent = 'Actualizando...';
+  (document.getElementById('slbl')||{}).textContent = 'Actualizando...';
   await refreshAllData();
   renderView(currentView);
   document.getElementById('sdot').className = 'save-dot';
-  document.getElementById('slbl').textContent = 'Guardado';
+  (document.getElementById('slbl')||{}).textContent = 'Guardado';
   toast('✓ Datos actualizados desde almacenamiento compartido');
 }
 
