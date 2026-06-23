@@ -2319,12 +2319,11 @@ function renderMarcas(){
         <button class="btn btn-primary btn-sm" onclick="editMarca(null)"><i class="ti ti-plus"></i>Nueva marca</button>
       </div>
     </div>
-    <div class="kgrid" style="grid-template-columns:repeat(5,1fr)">
-      <div class="kcard"><div class="kl">Total marcas</div><div class="kv">${DB_MARCAS.filter(m=>m.id).length}</div></div>
-      <div class="kcard"><div class="kl">Activas</div><div class="kv" style="color:var(--grn)">${DB_MARCAS.filter(m=>m.id&&m.activa!==false).length}</div></div>
-      <div class="kcard"><div class="kl">Ventas reales</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Previstos</div><div class="kv" style="color:var(--acc)">€${Math.round(totalP).toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Cumplimiento</div><div class="kv" style="color:${cumpl===null?'var(--mut)':cumpl>=100?'var(--grn)':'var(--red)'}">${cumpl!==null?cumpl+'%':'—'}</div></div>
+    <div class="kgrid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kcard"><div class="kl">Activas <span style="font-size:10px;font-weight:400;color:var(--mut)">de ${DB_MARCAS.filter(m=>m.id).length}</span></div><div class="kv" style="color:var(--grn)">${DB_MARCAS.filter(m=>m.id&&m.activa!==false).length}</div></div>
+      <div class="kcard"><div class="kl">Neto Real acumulado</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Neto Previsto acumulado</div><div class="kv" style="color:var(--acc)">€${Math.round(totalP).toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Evolución</div><div class="kv" style="color:${cumpl===null?'var(--mut)':cumpl>=100?'var(--grn)':'var(--red)'}">${cumpl!==null?cumpl+'%':'—'}</div></div>
     </div>
     <!-- Importador -->
     <div id="marcas-xl-panel" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
@@ -2382,98 +2381,143 @@ function filterMarcas(){
 function renderMarcasTable(list){
   const el=document.getElementById('marcas-cards');
   const elTot=document.getElementById('marcas-totales');
-  if(!el)return;
+  if(!el) return;
+
   const fmtE=v=>v>0?Math.round(v).toLocaleString('es-ES'):'—';
-  const pctColor=p=>p===null?'var(--mut)':p>=100?'var(--grn)':p>=75?'var(--amb)':'var(--red)';
   const pctFmt=p=>p!==null?Math.round(p)+'%':'—';
+  const pctColor=p=>p===null?'#B0B8C8':p>=100?'#0A6E50':p>=75?'#8F5C00':'#9B2020';
   const MESES_LARGO=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  el.innerHTML=list.filter(m=>m.id).map(m=>{
+  // Sort alphabetically
+  const sorted=[...list.filter(m=>m.id)].sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+
+  // Detect last month with real data globally
+  const lastMesIdx=MESES.reduce((last,mes,i)=>{
+    const hasReal=sorted.some(m=>((m.ventas||{})[mes]||0)>0);
+    return hasReal?i:last;
+  },-1);
+  const lastMesNombre=lastMesIdx>=0?MESES_LARGO[lastMesIdx]:'';
+
+  // Build header
+  const mesHeaders=MESES.map((mes,i)=>{
+    const isPast=i<=lastMesIdx;
+    const bg=isPast?'#EEF2F8':'#F7F9FD';
+    const textOp=isPast?'1':'0.5';
+    return`<th style="text-align:center;background:${bg};border-left:1px solid #D4DCE8;opacity:${textOp};min-width:90px;padding:0">
+      <div style="padding:4px 6px;font-size:10px;font-weight:700;color:#18243A;border-bottom:0.5px solid #D4DCE8">${mes}</div>
+      <div style="display:flex">
+        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #E8EDF5">N.REAL</div>
+        <div style="flex:1;text-align:right;font-size:8px;font-weight:700;color:#1558B0;padding:3px 4px;border-right:0.5px solid #E8EDF5">N.PREV</div>
+        <div style="width:32px;text-align:right;font-size:8px;font-weight:700;color:#6878A0;padding:3px 4px">EVL%</div>
+      </div>
+    </th>`;
+  }).join('');
+
+  // Build rows
+  const rows=sorted.map(m=>{
     const v=m.ventas||{}, p=m.previstos||{};
-    const totV=MESES.reduce((s,mes)=>s+(v[mes]||0),0);
-    const totP=MESES.reduce((s,mes)=>s+(p[mes]||0),0);
     const mesConDatos=MESES.filter(mes=>(v[mes]||0)>0&&(p[mes]||0)>0);
     const acumV=mesConDatos.reduce((s,mes)=>s+(v[mes]||0),0);
     const acumP=mesConDatos.reduce((s,mes)=>s+(p[mes]||0),0);
     const acumPct=acumP>0?acumV/acumP*100:null;
-    const ultimoMes=mesConDatos.length?MESES_LARGO[MESES.indexOf(mesConDatos[mesConDatos.length-1])]:'';
-    const incrColor=pctColor(acumPct);
+    const ultMesAcum=mesConDatos.length?MESES_LARGO[MESES.indexOf(mesConDatos[mesConDatos.length-1])]:'';
+    const acumColor=pctColor(acumPct);
 
-    const mesesHTML=MESES.map((mes,i)=>{
+    const mesCells=MESES.map((mes,i)=>{
       const vr=v[mes]||0, vp=p[mes]||0;
-      const tieneReal=vr>0, tienePrev=vp>0;
       const pct=vp>0&&vr>0?vr/vp*100:null;
-      const barW=pct!==null?Math.min(100,Math.round(pct)):0;
-      const barColor=pct===null?'var(--brd)':pct>=100?'var(--grn)':pct>=75?'var(--amb)':'var(--red)';
-      const realColor=tieneReal&&tienePrev?(vr>=vp?'var(--grn)':'var(--red)'):'var(--mut)';
-      const bg=tieneReal?'var(--sur)':'#FAFBFD';
-      return`<div style="flex:1;padding:5px 4px;border-right:0.5px solid var(--brd);text-align:center;background:${bg};min-width:0">
-        <div style="font-size:9px;color:var(--mut);font-weight:600;margin-bottom:3px">${mes}</div>
-        <div style="font-size:10px;color:var(--acc)">${fmtE(vp)}</div>
-        <div style="font-size:10px;font-weight:600;color:${realColor}">${fmtE(vr)}</div>
-        <div style="font-size:9px;font-weight:600;color:${pctColor(pct)};margin-bottom:3px">${pctFmt(pct)}</div>
-        <div style="height:3px;background:var(--brd);border-radius:2px;overflow:hidden">
-          <div style="height:100%;width:${barW}%;background:${barColor};border-radius:2px"></div>
+      const isPast=i<=lastMesIdx;
+      const bg=isPast?'':'background:#FAFBFD;';
+      const rColor=vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8';
+      return`<td style="${bg}border-left:1px solid #D4DCE8;padding:0">
+        <div style="display:flex">
+          <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;font-weight:600;color:${rColor};cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')">${fmtE(vr)}</div>
+          <div style="flex:1;text-align:right;padding:5px 4px;font-size:10px;color:#1558B0;cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')">${fmtE(vp)}</div>
+          <div style="width:32px;text-align:right;padding:5px 4px;font-size:10px;font-weight:600;color:${pctColor(pct)}">${pctFmt(pct)}</div>
         </div>
-      </div>`;
+      </td>`;
     }).join('');
 
-    return`<div class="card" style="margin-bottom:8px;opacity:${m.activa===false?0.5:1}" id="marca-row-${m.id}">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:0.5px solid var(--brd)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()">
-          <span style="font-size:12px;font-weight:700;color:var(--txt)">${m.nombre}</span>
-          ${m.activa===false?'<span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 6px;border-radius:5px">inactiva</span>':''}
-          ${m.notas?`<span style="font-size:10px;color:var(--mut)">${m.notas}</span>`:''}
-        </div>
-        <div style="display:flex;align-items:center;gap:12px">
-          <div style="text-align:right">
-            <div style="font-size:9px;color:var(--mut)">Previsto</div>
-            <div style="font-size:12px;font-weight:700;color:var(--acc)">${fmtE(totP)}</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:9px;color:var(--mut)">Real</div>
-            <div style="font-size:12px;font-weight:700;color:${totV>0&&totP>0?(totV>=totP?'var(--grn)':'var(--red)'):'var(--mut)'}">${fmtE(totV)}</div>
-          </div>
-          ${acumPct!==null?`<div style="background:#EEF9F4;border-radius:8px;padding:4px 10px;text-align:center;min-width:80px">
-            <div style="font-size:9px;color:var(--grn);font-weight:600">hasta ${ultimoMes}</div>
-            <div style="font-size:13px;font-weight:700;color:${incrColor}">${pctFmt(acumPct)}</div>
-          </div>`:''}
-          <button class="bico e" onclick="editMarca(${m.id})" style="width:24px;height:24px;font-size:12px"><i class="ti ti-pencil"></i></button>
-        </div>
-      </div>
-      <div style="display:flex;overflow-x:auto">${mesesHTML}</div>
-    </div>`;
-  }).join('') || '<div class="nodata">Sin marcas</div>';
+    return`<tr id="marca-row-${m.id}" style="opacity:${m.activa===false?0.45:1}">
+      <td style="position:sticky;left:0;background:#fff;z-index:1;padding:0;width:28px;border-right:none">
+        <div style="padding:5px 6px;text-align:center"><input type="checkbox" class="marca-cb" data-id="${m.id}" onchange="updateMarcaSelection()"></div>
+      </td>
+      <td style="position:sticky;left:28px;background:#fff;z-index:1;border-right:1.5px solid #D4DCE8;padding:5px 10px;font-size:11.5px;font-weight:700;white-space:nowrap;min-width:140px">
+        ${m.nombre}${m.activa===false?' <span style="font-size:9px;background:#F1F5F9;color:#475569;padding:1px 5px;border-radius:4px;font-weight:400">inactiva</span>':''}
+      </td>
+      <td style="border-left:2px solid #D4DCE8;background:#EEF9F4;padding:0;min-width:130px">
+        ${acumPct!==null?`<div style="padding:4px 8px;text-align:center">
+          <div style="font-size:9px;color:#0A6E50;font-weight:600;margin-bottom:1px">hasta ${ultMesAcum}</div>
+          <div style="font-size:14px;font-weight:700;color:${acumColor};line-height:1">${pctFmt(acumPct)}</div>
+          <div style="font-size:9px;color:#6878A0;margin-top:1px">${fmtE(acumV)} / ${fmtE(acumP)}</div>
+        </div>`:`<div style="padding:6px;text-align:center;color:#B0B8C8;font-size:10px">—</div>`}
+      </td>
+      ${mesCells}
+      <td style="padding:3px 5px;width:26px;text-align:center">
+        <button class="bico e" onclick="editMarca(${m.id})" style="width:22px;height:22px;font-size:11px"><i class="ti ti-pencil"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
 
-  // Totales globales
-  if(elTot){
-    const sumV=mes=>list.filter(m=>m.id).reduce((a,m)=>a+((m.ventas||{})[mes]||0),0);
-    const sumP=mes=>list.filter(m=>m.id).reduce((a,m)=>a+((m.previstos||{})[mes]||0),0);
-    const totV=MESES.reduce((a,m)=>a+sumV(m),0);
-    const totP=MESES.reduce((a,m)=>a+sumP(m),0);
-    const mesesConDatos=MESES.filter(mes=>list.filter(m=>m.id).some(m=>(m.ventas||{})[mes]>0&&(m.previstos||{})[mes]>0));
-    const acP=mesesConDatos.reduce((a,mes)=>a+sumP(mes),0);
-    const acV=mesesConDatos.reduce((a,mes)=>a+sumV(mes),0);
-    const acPct=acP>0?acV/acP*100:null;
-    const ultimoMes=mesesConDatos.length?MESES_LARGO[MESES.indexOf(mesesConDatos[mesesConDatos.length-1])]:'';
-    elTot.innerHTML=`<div class="card" style="padding:12px 16px;background:#EEF5EC;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div style="font-size:12px;font-weight:700;color:var(--txt)">TOTAL — ${list.filter(m=>m.id).length} marcas</div>
-      <div style="display:flex;gap:16px;align-items:center">
-        <div style="text-align:right"><div style="font-size:9px;color:var(--mut)">Previsto anual</div><div style="font-size:14px;font-weight:700;color:var(--acc)">${fmtE(totP)}</div></div>
-        <div style="text-align:right"><div style="font-size:9px;color:var(--mut)">Real anual</div><div style="font-size:14px;font-weight:700;color:${totV>=totP?'var(--grn)':'var(--red)'}">${fmtE(totV)}</div></div>
-        ${acPct!==null?`<div style="background:#D1FAE5;border-radius:8px;padding:6px 14px;text-align:center">
-          <div style="font-size:9px;color:var(--grn);font-weight:600">Acumulado hasta ${ultimoMes}</div>
-          <div style="font-size:16px;font-weight:700;color:${pctColor(acPct)}">${pctFmt(acPct)}</div>
-          <div style="font-size:9px;color:var(--mut)">€${fmtE(acV)} de €${fmtE(acP)}</div>
-        </div>`:''}
-      </div>
-    </div>`;
-  }
+  // Global acumulado for footer
+  const acP=lastMesIdx>=0?MESES.slice(0,lastMesIdx+1).reduce((a,mes)=>a+sorted.reduce((s,m)=>s+((m.previstos||{})[mes]||0),0),0):0;
+  const acV=lastMesIdx>=0?MESES.slice(0,lastMesIdx+1).reduce((a,mes)=>a+sorted.reduce((s,m)=>s+((m.ventas||{})[mes]||0),0),0):0;
+  const acPct=acP>0?acV/acP*100:null;
+
+  el.innerHTML=`<div style="background:#fff;border:1.5px solid #D4DCE8;border-radius:10px;overflow:hidden;margin-bottom:8px">
+    <div style="overflow-x:auto">
+    <table style="border-collapse:collapse;width:100%;font-size:11px">
+      <thead>
+        <tr>
+          <th style="position:sticky;left:0;z-index:3;background:#F3F6FB;width:28px;padding:0;border-bottom:1.5px solid #D4DCE8"></th>
+          <th style="position:sticky;left:28px;z-index:3;background:#EEF2F8;border-right:1.5px solid #D4DCE8;border-bottom:1.5px solid #D4DCE8;min-width:140px;padding:0">
+            <div style="padding:6px 10px;font-size:11px;font-weight:700;color:#18243A">PROVEEDOR</div>
+          </th>
+          <th style="background:#D1FAE5;border-left:2px solid #D4DCE8;border-bottom:1.5px solid #D4DCE8;min-width:130px;padding:0;text-align:center">
+            <div style="padding:4px 6px;font-size:10px;font-weight:700;color:#065F46;border-bottom:0.5px solid #A7F3D0">ACUMULADO${lastMesNombre?' hasta '+lastMesNombre:''}</div>
+            <div style="display:flex">
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#0A6E50;padding:3px 4px;border-right:0.5px solid #A7F3D0">N.REAL</div>
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#1558B0;padding:3px 4px;border-right:0.5px solid #A7F3D0">N.PREV</div>
+              <div style="flex:1;text-align:center;font-size:8px;font-weight:700;color:#065F46;padding:3px 4px">EVL%</div>
+            </div>
+          </th>
+          ${mesHeaders}
+          <th style="width:26px;border-bottom:1.5px solid #D4DCE8;background:#F3F6FB"></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr style="background:#EEF5EC;border-top:1.5px solid #D4DCE8">
+          <td style="position:sticky;left:0;background:#EEF5EC;z-index:1;width:28px"></td>
+          <td style="position:sticky;left:28px;background:#EEF5EC;z-index:1;padding:6px 10px;font-size:11px;font-weight:700;border-right:1.5px solid #D4DCE8">
+            TOTAL <span style="font-weight:400;color:#6878A0">(${sorted.length})</span>
+          </td>
+          <td style="border-left:2px solid #D4DCE8;background:#D1FAE5;padding:6px 8px;text-align:center">
+            ${acPct!==null?`<div style="font-size:9px;color:#065F46;font-weight:600">${fmtE(acV)} / ${fmtE(acP)}</div>
+            <div style="font-size:15px;font-weight:700;color:${pctColor(acPct)}">${pctFmt(acPct)}</div>`:'—'}
+          </td>
+          ${MESES.map((mes,i)=>{
+            const vr=sorted.reduce((a,m)=>a+((m.ventas||{})[mes]||0),0);
+            const vp=sorted.reduce((a,m)=>a+((m.previstos||{})[mes]||0),0);
+            const pct=vp>0&&vr>0?vr/vp*100:null;
+            const isPast=i<=lastMesIdx;
+            return`<td style="border-left:1px solid #D4DCE8;padding:0;${isPast?'':'background:#FAFBFD;'}">
+              <div style="display:flex">
+                <div style="flex:1;text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:${vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #D4DCE8">${fmtE(vr)}</div>
+                <div style="flex:1;text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #D4DCE8">${fmtE(vp)}</div>
+                <div style="width:32px;text-align:right;padding:6px 4px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
+              </div>
+            </td>`;
+          }).join('')}
+          <td style="width:26px"></td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+  </div>`;
+
+  if(elTot) elTot.innerHTML='';
 }
-
-
-
 
 
 function renderSobrestock(){
