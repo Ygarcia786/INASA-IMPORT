@@ -705,9 +705,10 @@ function handleHistoricoXL(input){
   const status=document.getElementById('hist-status-'+rowId);
   const c=DB.clientes.find(x=>x.nombre===cliNombre);
   if(!c){if(status)status.textContent='⚠ Cliente no encontrado';return;}
-
   if(status) status.innerHTML='⏳ Leyendo...';
-  const MMAP={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic',ene:'Ene',feb:'Feb',mar:'Mar',abr:'Abr',may:'May',jun:'Jun',jul:'Jul',ago:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dic:'Dic',jan:'Ene',apr:'Abr',aug:'Ago',dec:'Dic','1':'Ene','2':'Feb','3':'Mar','4':'Abr','5':'May','6':'Jun','7':'Jul','8':'Ago','9':'Sep','10':'Oct','11':'Nov','12':'Dic','01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep'};
+
+  const MMAP_WIDE={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic'};
+  const MMAP_TALL={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic',ene:'Ene',feb:'Feb',mar:'Mar',abr:'Abr',may:'May',jun:'Jun',jul:'Jul',ago:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dic:'Dic',jan:'Ene',apr:'Abr',aug:'Ago',dec:'Dic','1':'Ene','2':'Feb','3':'Mar','4':'Abr','5':'May','6':'Jun','7':'Jul','8':'Ago','9':'Sep','10':'Oct','11':'Nov','12':'Dic','01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep'};
 
   ensureXLSX().then(()=>{
     const reader=new FileReader();
@@ -717,46 +718,71 @@ function handleHistoricoXL(input){
         const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
         if(!rows.length){if(status)status.textContent='⚠ Archivo vacío';return;}
 
+        // Detectar formato: buscar fila de cabecera con nombres de mes
+        let hdrIdx=-1, mesColMap={};
+        for(let i=0;i<Math.min(5,rows.length);i++){
+          const r=rows[i].map(x=>String(x||'').toLowerCase().trim());
+          const mesesEncontrados=r.filter(x=>MMAP_WIDE[x]);
+          if(mesesEncontrados.length>=3){ hdrIdx=i; break; }
+        }
+
         const parsed=[];
-        rows.forEach(r=>{
-          const col0=String(r[0]||'').trim().toLowerCase();
-          const mesKey=MMAP[col0]||MMAP[col0.slice(0,3)];
-          if(!mesKey) return;
-          // Detectar si col1 es año (4 dígitos) o importe
-          const v1=String(r[1]||'').replace(/[^0-9]/g,'');
-          let año=anoSel, imp=0, dep='';
-          if(v1.length===4&&parseInt(v1)>2000){
-            año=parseInt(v1);
-            imp=parseImporte(String(r[2]||''));
-            dep=String(r[4]||'').trim();
-          } else {
-            imp=parseImporte(String(r[1]||''));
-            dep=String(r[3]||'').trim();
-          }
-          if(!imp) return;
-          parsed.push({mes:mesKey, año, imp, dep});
-        });
+
+        if(hdrIdx>=0){
+          // ── FORMATO ANCHO: departamento | ene | feb | … | dic ──
+          const hdrs=rows[hdrIdx].map(x=>String(x||'').toLowerCase().trim());
+          hdrs.forEach((h,i)=>{ if(MMAP_WIDE[h]) mesColMap[i]=MMAP_WIDE[h]; });
+          const dataRows=rows.slice(hdrIdx+1);
+          dataRows.forEach(row=>{
+            const dep=String(row[0]||'').trim(); if(!dep) return;
+            Object.entries(mesColMap).forEach(([ci,mes])=>{
+              const imp=parseImporte(String(row[ci]||''));
+              if(imp>0) parsed.push({dep, mes, año:anoSel, imp});
+            });
+          });
+        } else {
+          // ── FORMATO ALTO: mes | importe ──
+          rows.forEach(row=>{
+            const col0=String(row[0]||'').trim().toLowerCase();
+            const mesKey=MMAP_TALL[col0]||MMAP_TALL[col0.slice(0,3)];
+            if(!mesKey) return;
+            const v1=String(row[1]||'').replace(/[^0-9]/g,'');
+            let año=anoSel, imp=0, dep='';
+            if(v1.length===4&&parseInt(v1)>2000){ año=parseInt(v1); imp=parseImporte(String(row[2]||'')); dep=String(row[4]||'').trim(); }
+            else { imp=parseImporte(String(row[1]||'')); dep=String(row[3]||'').trim(); }
+            if(imp>0) parsed.push({dep, mes:mesKey, año, imp});
+          });
+        }
 
         if(!parsed.length){
-          if(status)status.textContent='⚠ Sin datos. Formato: MES | IMPORTE';
+          if(status)status.textContent='⚠ Sin datos válidos';
           input.value=''; return;
         }
 
+        // Guardar en ventas_dep y ventas
         if(!c.ventas)c.ventas=[];
-        parsed.forEach(({mes,año,imp,dep})=>{
+        if(!c.ventas_dep)c.ventas_dep={};
+        // Limpiar datos anteriores del mismo año para este cliente (reemplazar)
+        c.ventas=c.ventas.filter(v=>(v.año||anoSel)!==anoSel);
+
+        const mesTotal={};
+        parsed.forEach(({dep,mes,año,imp})=>{
           if(dep){
-            if(!c.ventas_dep)c.ventas_dep={};
             if(!c.ventas_dep[dep])c.ventas_dep[dep]={};
             c.ventas_dep[dep][mes]=(c.ventas_dep[dep][mes]||0)+imp;
           }
-          const idx=c.ventas.findIndex(v=>v.mes===mes&&(v.año||anoSel)===año);
-          if(idx>=0)c.ventas[idx].importe+=imp;
-          else c.ventas.push({mes,año,importe:imp,unidades:0,descripcion:''});
+          mesTotal[mes]=(mesTotal[mes]||0)+imp;
+        });
+        // Agregar totales por mes al array ventas
+        Object.entries(mesTotal).forEach(([mes,imp])=>{
+          c.ventas.push({mes,año:anoSel,importe:imp,unidades:0,descripcion:''});
         });
 
         await save();
         input.value='';
-        if(status) status.innerHTML=`<span style="color:#059669">✓ ${parsed.length} meses · ${año===anoSel?anoSel:parsed[0].año}</span>`;
+        const deps=[...new Set(parsed.map(p=>p.dep).filter(Boolean))];
+        const total=Object.values(mesTotal).reduce((a,v)=>a+v,0);
+        if(status) status.innerHTML=`<span style="color:#059669">✓ ${anoSel} · ${deps.length} dptos · €${Math.round(total).toLocaleString('es-ES')}</span>`;
         renderHistoricoTable();
         dashRenderComp();
       }catch(err){
