@@ -33,6 +33,7 @@
     <button class="tab" onclick="nav('clientes',this)"><i class="ti ti-building-store"></i>Clientes</button>
     <button class="tab" onclick="nav('marcas',this)"><i class="ti ti-rosette"></i>Marcas</button>
     <button class="tab" onclick="nav('ventas',this)"><i class="ti ti-chart-bar"></i>Ventas</button>
+    <button class="tab" onclick="nav('previsto',this)"><i class="ti ti-chart-arrows-vertical"></i>Previsto Neto</button>
     <button class="tab" onclick="nav('directorio',this)"><i class="ti ti-users"></i>Directorio</button>
     <button class="tab" onclick="nav('pipeline',this)"><i class="ti ti-git-fork"></i>Pipeline</button>
     <button class="tab" onclick="nav('oportunidades',this)"><i class="ti ti-bulb"></i>Oportunidades</button>
@@ -238,6 +239,7 @@ const COMP_KEY   = 'inasa_compromisos_v2';
 const TRAB_KEY   = 'inasa_trabajadores_v2';
 const MARCAS_KEY = 'inasa_marcas_v1';
 const HIST_KEY   = 'inasa_historico_ventas_v1';
+const PREV_KEY   = 'inasa_previsto_neto_v1';
 
 // Local-only prefs (not shared)
 const LPREF_USER_ID   = 'inasa_my_user_id';
@@ -363,6 +365,247 @@ async function saveHistorico(){
 function histGet(cli,ano,mes){ return ((DB_HISTORICO[cli]||{})[ano]||{})[mes]||0; }
 function histGetAno(cli,ano){ const m=(DB_HISTORICO[cli]||{})[ano]||{}; return Object.values(m).reduce((a,v)=>a+v,0); }
 
+// ── PREVISTO NETO ──
+// Estructura: { año: { cliente: { proveedor: { mes: importe } } } }
+let DB_PREVISTO={};
+async function loadPrevisto(){
+  try{ const r=await window.storage.get(PREV_KEY,true); if(r) DB_PREVISTO=JSON.parse(r.value); }catch(e){ DB_PREVISTO={}; }
+}
+async function savePrevisto(){
+  try{ await window.storage.set(PREV_KEY,JSON.stringify(DB_PREVISTO),true); }catch(e){}
+}
+
+function renderPrevisto(){
+  const anoAct=new Date().getFullYear(), anoAnt=anoAct-1;
+  const fmtE=v=>v>0?'€'+Math.round(v).toLocaleString('es-ES'):'—';
+  const fmtN=v=>v>0?Math.round(v).toLocaleString('es-ES'):'—';
+
+  // Recopilar todos los clientes y proveedores de ambos años
+  const allClis=new Set([...Object.keys(DB_PREVISTO[anoAnt]||{}),...Object.keys(DB_PREVISTO[anoAct]||{})]);
+  const totAnt=Object.values(DB_PREVISTO[anoAnt]||{}).flatMap(p=>Object.values(p)).flatMap(m=>Object.values(m)).reduce((a,v)=>a+v,0);
+  const totAct=Object.values(DB_PREVISTO[anoAct]||{}).flatMap(p=>Object.values(p)).flatMap(m=>Object.values(m)).reduce((a,v)=>a+v,0);
+  const varTot=totAnt>0?((totAct-totAnt)/totAnt*100):0;
+
+  document.getElementById('content').innerHTML=`
+    <div class="ph">
+      <div class="pt"><i class="ti ti-chart-arrows-vertical"></i>Previsto Neto</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input class="fi" id="prev-f-prov" placeholder="Buscar proveedor..." style="width:150px;padding:6px 10px" oninput="renderPrevitoTable()">
+        <input class="fi" id="prev-f-cli"  placeholder="Buscar cliente..."   style="width:140px;padding:6px 10px" oninput="renderPrevitoTable()">
+        <button class="btn btn-sm" onclick="document.getElementById('prev-f-prov').value='';document.getElementById('prev-f-cli').value='';renderPrevitoTable()"><i class="ti ti-x"></i>Limpiar</button>
+      </div>
+    </div>
+
+    <div class="kgrid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+      <div class="kcard"><div class="kl">Previsto ${anoAnt}</div><div class="kv" style="color:var(--mut)">${fmtE(totAnt)}</div></div>
+      <div class="kcard" style="border-color:#A8C4EF;background:#EEF5FC"><div class="kl">Previsto ${anoAct}</div><div class="kv" style="color:var(--acc)">${fmtE(totAct)}</div></div>
+      <div class="kcard" style="border-color:${varTot>=0?'#6EE7B7':'#FCA5A5'};background:${varTot>=0?'#D1FAE5':'#FCEBEB'}">
+        <div class="kl">Variación total</div>
+        <div class="kv" style="color:${varTot>=0?'#065F46':'#A32D2D'}">${varTot>=0?'+':''}${varTot.toFixed(1)}%</div>
+      </div>
+      <div class="kcard"><div class="kl">Clientes</div><div class="kv">${allClis.size}</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1.5px solid var(--brd)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-right:1px solid var(--brd)">
+          <span style="font-size:13px;font-weight:700;color:var(--mut)">${anoAnt} — año anterior</span>
+          <label style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--brd);border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;color:var(--mut);background:var(--sur)">
+            <i class="ti ti-file-upload"></i>Subir Excel
+            <input type="file" accept=".xlsx,.xls,.csv" style="display:none" data-ano="${anoAnt}" onchange="handlePrevitoXL(this)">
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px">
+          <span style="font-size:13px;font-weight:700;color:var(--acc)">${anoAct} — año actual</span>
+          <label style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--acc);border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;color:var(--acc);background:#EEF5FC">
+            <i class="ti ti-file-upload"></i>Subir Excel
+            <input type="file" accept=".xlsx,.xls,.csv" style="display:none" data-ano="${anoAct}" onchange="handlePrevitoXL(this)">
+          </label>
+        </div>
+      </div>
+      <div id="prev-status" style="display:none;padding:8px 16px;font-size:12px"></div>
+      <div style="overflow-x:auto">
+        <table id="prev-table" style="border-collapse:collapse;width:100%;font-size:11px;white-space:nowrap">
+          <thead>
+            <tr style="background:var(--bg)">
+              <th style="padding:6px 12px;text-align:left;position:sticky;left:0;background:var(--bg);z-index:2;border-bottom:1.5px solid var(--brd);border-right:1px solid var(--brd);min-width:180px">Cliente / Proveedor</th>
+              ${MESES.map(m=>`<th style="padding:5px 7px;text-align:right;color:var(--mut);border-bottom:1.5px solid var(--brd);border-left:1px solid var(--brd)">${m}</th>`).join('')}
+              <th style="padding:5px 10px;text-align:right;color:var(--mut);border-bottom:1.5px solid var(--brd);border-left:2px solid var(--brd);background:#F3F6FB">Total ${anoAnt}</th>
+              ${MESES.map(m=>`<th style="padding:5px 7px;text-align:right;color:var(--acc);border-bottom:1.5px solid var(--brd);border-left:1px solid #A8C4EF">${m}</th>`).join('')}
+              <th style="padding:5px 10px;text-align:right;color:var(--acc);border-bottom:1.5px solid var(--brd);border-left:2px solid var(--acc);background:#EEF5FC">Total ${anoAct}</th>
+              <th style="padding:5px 10px;text-align:center;border-bottom:1.5px solid var(--brd);border-left:2px solid var(--brd);font-size:10px;color:var(--mut)">Var %</th>
+            </tr>
+          </thead>
+          <tbody id="prev-tbody"></tbody>
+        </table>
+      </div>
+    </div>`;
+
+  renderPrevitoTable();
+}
+
+function renderPrevitoTable(){
+  const tbody=document.getElementById('prev-tbody'); if(!tbody) return;
+  const anoAct=new Date().getFullYear(), anoAnt=anoAct-1;
+  const fCli=(document.getElementById('prev-f-cli')?.value||'').toLowerCase();
+  const fProv=(document.getElementById('prev-f-prov')?.value||'').toLowerCase();
+
+  const dataAnt=DB_PREVISTO[anoAnt]||{};
+  const dataAct=DB_PREVISTO[anoAct]||{};
+  const allClis=[...new Set([...Object.keys(dataAnt),...Object.keys(dataAct)])].sort();
+
+  const fmtN=v=>v>0?Math.round(v).toLocaleString('es-ES'):'—';
+  const NCOLS=MESES.length*2+3;
+
+  let html='';
+  let gTotAnt=MESES.map(()=>0), gTotAct=MESES.map(()=>0);
+
+  allClis.forEach(cli=>{
+    if(fCli && !cli.toLowerCase().includes(fCli)) return;
+    const provsAnt=Object.keys(dataAnt[cli]||{});
+    const provsAct=Object.keys(dataAct[cli]||{});
+    const allProvs=[...new Set([...provsAnt,...provsAct])].sort();
+    if(!allProvs.length) return;
+    if(fProv && !allProvs.some(p=>p.toLowerCase().includes(fProv))) return;
+
+    const gid='pg_'+cli.replace(/[^a-z0-9]/gi,'_');
+    // Totales por cliente por mes (ambos años)
+    const cliMesAnt=MESES.map(m=>allProvs.reduce((a,p)=>a+((dataAnt[cli]||{})[p]||{})[m]||0,0));
+    const cliMesAct=MESES.map(m=>allProvs.reduce((a,p)=>a+((dataAct[cli]||{})[p]||{})[m]||0,0));
+    const cliTotAnt=cliMesAnt.reduce((a,v)=>a+v,0);
+    const cliTotAct=cliMesAct.reduce((a,v)=>a+v,0);
+    const cliVar=cliTotAnt>0?((cliTotAct-cliTotAnt)/cliTotAnt*100):null;
+    cliMesAnt.forEach((v,i)=>gTotAnt[i]+=v);
+    cliMesAct.forEach((v,i)=>gTotAct[i]+=v);
+
+    html+=`<tr style="background:#EEF2F8;cursor:pointer" onclick="prvToggle('${gid}')">
+      <td style="padding:7px 12px;font-weight:700;color:#0C447C;position:sticky;left:0;background:#EEF2F8;z-index:1;border-right:1px solid var(--brd)">
+        <i class="ti ti-chevron-down" id="${gid}i" style="font-size:10px;margin-right:5px;transition:.2s"></i>${cli}
+      </td>
+      ${cliMesAnt.map((v,i)=>`<td style="padding:5px 7px;text-align:right;color:var(--mut);border-left:1px solid var(--brd)">${fmtN(v)}</td>`).join('')}
+      <td style="padding:5px 10px;text-align:right;font-weight:700;color:#444441;border-left:2px solid var(--brd);background:#F3F6FB">${fmtN(cliTotAnt)}</td>
+      ${cliMesAct.map((v,i)=>`<td style="padding:5px 7px;text-align:right;color:var(--acc);border-left:1px solid #A8C4EF">${fmtN(v)}</td>`).join('')}
+      <td style="padding:5px 10px;text-align:right;font-weight:700;color:var(--acc);border-left:2px solid var(--acc);background:#EEF5FC">${fmtN(cliTotAct)}</td>
+      <td style="padding:5px 10px;text-align:center;border-left:2px solid var(--brd)">${cliVar===null?'—':`<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;background:${cliVar>=0?'#D1FAE5':'#FCEBEB'};color:${cliVar>=0?'#065F46':'#A32D2D'}">${cliVar>=0?'+':''}${cliVar.toFixed(1)}%</span>`}</td>
+    </tr>`;
+
+    // Filas de proveedor
+    allProvs.filter(p=>!fProv||p.toLowerCase().includes(fProv)).forEach((prov,ri)=>{
+      const mesAnt=MESES.map(m=>((dataAnt[cli]||{})[prov]||{})[m]||0);
+      const mesAct=MESES.map(m=>((dataAct[cli]||{})[prov]||{})[m]||0);
+      const totAnt=mesAnt.reduce((a,v)=>a+v,0);
+      const totAct=mesAct.reduce((a,v)=>a+v,0);
+      const varPct=totAnt>0?((totAct-totAnt)/totAnt*100):null;
+      html+=`<tr class="${gid}_r" style="background:${ri%2===0?'var(--sur)':'var(--bg)'}">
+        <td style="padding:5px 12px 5px 26px;color:var(--mut);position:sticky;left:0;background:${ri%2===0?'var(--sur)':'var(--bg)'};z-index:1;border-right:1px solid var(--brd)">${prov}</td>
+        ${mesAnt.map(v=>`<td style="padding:4px 7px;text-align:right;color:var(--mut);border-left:1px solid var(--brd)">${fmtN(v)}</td>`).join('')}
+        <td style="padding:4px 10px;text-align:right;font-weight:700;color:#444441;border-left:2px solid var(--brd);background:#F7F9FD">${fmtN(totAnt)}</td>
+        ${mesAct.map(v=>`<td style="padding:4px 7px;text-align:right;color:var(--acc);border-left:1px solid #D4E8FA">${fmtN(v)}</td>`).join('')}
+        <td style="padding:4px 10px;text-align:right;font-weight:700;color:var(--acc);border-left:2px solid #A8C4EF;background:#F0F7FF">${fmtN(totAct)}</td>
+        <td style="padding:4px 10px;text-align:center;border-left:2px solid var(--brd)">
+          ${varPct===null?'—':`<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;background:${varPct>=0?'#D1FAE5':'#FCEBEB'};color:${varPct>=0?'#065F46':'#A32D2D'}">${varPct>=0?'+':''}${varPct.toFixed(1)}%</span>`}
+        </td>
+      </tr>`;
+    });
+  });
+
+  // Fila total general
+  const gTotAntSum=gTotAnt.reduce((a,v)=>a+v,0);
+  const gTotActSum=gTotAct.reduce((a,v)=>a+v,0);
+  const gVar=gTotAntSum>0?((gTotActSum-gTotAntSum)/gTotAntSum*100):null;
+  html+=`<tr style="background:#E6F1FB;border-top:2px solid var(--acc)">
+    <td style="padding:7px 12px;font-weight:700;color:#0C447C;position:sticky;left:0;background:#E6F1FB;z-index:1;border-right:1px solid #A8C4EF">TOTAL GENERAL</td>
+    ${gTotAnt.map(v=>`<td style="padding:5px 7px;text-align:right;font-weight:700;color:#444441;border-left:1px solid #A8C4EF">${fmtN(v)}</td>`).join('')}
+    <td style="padding:5px 10px;text-align:right;font-weight:700;color:#444441;border-left:2px solid #888780;background:#E0EAF5">${fmtN(gTotAntSum)}</td>
+    ${gTotAct.map(v=>`<td style="padding:5px 7px;text-align:right;font-weight:700;color:#0C447C;border-left:1px solid #185FA5">${fmtN(v)}</td>`).join('')}
+    <td style="padding:5px 10px;text-align:right;font-weight:700;color:#0C447C;border-left:2px solid #185FA5;background:#D6E8FA">${fmtN(gTotActSum)}</td>
+    <td style="padding:5px 10px;text-align:center;border-left:2px solid var(--brd)">
+      ${gVar===null?'—':`<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:${gVar>=0?'#D1FAE5':'#FCEBEB'};color:${gVar>=0?'#065F46':'#A32D2D'}">${gVar>=0?'+':''}${gVar.toFixed(1)}%</span>`}
+    </td>
+  </tr>`;
+
+  tbody.innerHTML=html||'<tr><td colspan="99" class="nodata">Sin datos de previsto. Sube un Excel para comenzar.</td></tr>';
+}
+
+function prvToggle(gid){
+  const rows=document.querySelectorAll('.'+gid+'_r');
+  const ico=document.getElementById(gid+'i');
+  const hidden=rows[0]?.style.display==='none';
+  rows.forEach(r=>r.style.display=hidden?'':'none');
+  if(ico) ico.style.transform=hidden?'rotate(0deg)':'rotate(-90deg)';
+}
+
+function handlePrevitoXL(input){
+  const file=input.files[0]; if(!file) return;
+  const ano=parseInt(input.dataset.ano);
+  const status=document.getElementById('prev-status');
+  if(status){status.style.display='block';status.innerHTML='<span style="color:var(--mut)">⏳ Leyendo...</span>';}
+
+  const MMAP_W={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic',
+    ene:'Ene',feb:'Feb',mar:'Mar',abr:'Abr',may:'May',jun:'Jun',jul:'Jul',ago:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dic:'Dic',
+    january:'Ene',february:'Feb',march:'Mar',april:'Abr',june:'Jun',july:'Jul',august:'Ago',september:'Sep',october:'Oct',november:'Nov',december:'Dic'};
+  const normS=s=>String(s||'').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+  ensureXLSX().then(()=>{
+    const reader=new FileReader();
+    reader.onload=async function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        if(!rows.length){if(status)status.innerHTML='<span style="color:var(--red)">⚠ Archivo vacío</span>';return;}
+
+        // Detectar fila de cabecera con meses
+        let hdrIdx=-1; const mesColMap={};
+        for(let i=0;i<Math.min(8,rows.length);i++){
+          const r=rows[i].map(x=>normS(x));
+          const found=r.filter(x=>MMAP_W[x]||MMAP_W[x.slice(0,3)]);
+          if(found.length>=3){hdrIdx=i;break;}
+        }
+        if(hdrIdx<0){if(status)status.innerHTML='<span style="color:var(--red)">⚠ No se encontraron columnas de meses (enero...diciembre)</span>';return;}
+
+        const hdrs=rows[hdrIdx].map(x=>normS(x));
+        hdrs.forEach((h,i)=>{ const m=MMAP_W[h]||MMAP_W[h.slice(0,3)]; if(m) mesColMap[i]=m; });
+
+        const parseN=v=>{ if(typeof v==='number') return v; const s=String(v||'').trim().replace(/\s/g,''); if(!s||s==='-') return 0; if(/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)) return parseFloat(s.replace(/\./g,'').replace(',','.')); return parseFloat(s.replace(',','.'))||0; };
+
+        // Recorrer filas de datos: detectar cliente (fila toda mayúsculas o sin valores numéricos) y proveedores
+        const dataRows=rows.slice(hdrIdx+1);
+        if(!DB_PREVISTO[ano]) DB_PREVISTO[ano]={};
+        let currentCli='Sin cliente';
+        let importados=0;
+
+        dataRows.forEach(row=>{
+          const col0=String(row[0]||'').trim();
+          if(!col0) return;
+          const hasNums=Object.keys(mesColMap).some(ci=>parseN(row[ci])>0);
+          const isAllCaps=col0===col0.toUpperCase()&&col0.length>3&&/[A-Z]/.test(col0);
+
+          if(isAllCaps&&!hasNums){
+            // Fila de cliente/grupo
+            currentCli=col0; return;
+          }
+          if(!hasNums) return; // fila vacía o subtotal sin datos
+
+          // Fila de proveedor
+          const prov=col0;
+          if(!DB_PREVISTO[ano][currentCli]) DB_PREVISTO[ano][currentCli]={};
+          if(!DB_PREVISTO[ano][currentCli][prov]) DB_PREVISTO[ano][currentCli][prov]={};
+          Object.entries(mesColMap).forEach(([ci,mes])=>{
+            const v=parseN(row[ci]);
+            if(v>0){ DB_PREVISTO[ano][currentCli][prov][mes]=(DB_PREVISTO[ano][currentCli][prov][mes]||0)+v; importados++; }
+          });
+        });
+
+        await savePrevisto();
+        input.value='';
+        if(status)status.innerHTML=`<span style="color:#059669">✓ ${ano}: ${importados} celdas importadas — ${Object.keys(DB_PREVISTO[ano]).length} clientes</span>`;
+        renderPrevitoTable();
+      }catch(err){ if(status)status.innerHTML=`<span style="color:var(--red)">⚠ Error: ${err.message}</span>`; console.error(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  }).catch(err=>{ if(status)status.innerHTML=`<span style="color:var(--red)">⚠ ${err.message}</span>`; });
+}
+
 async function exportData() {
   await refreshAllData();
 
@@ -410,7 +653,7 @@ async function nav(id, el) {
   renderView(id);
 }
 function renderView(id){
-  const renders={dashboard:renderDashboard,clientes:renderClientes,marcas:renderMarcas,ventas:renderVentas,directorio:renderDirectorio,pipeline:renderPipeline,oportunidades:renderOportunidades,tareas:renderTareas,seguimiento:renderSeguimiento,promociones:renderPromociones,compromisos:renderCompromisos,trabajadores:renderTrabajadores};
+  const renders={dashboard:renderDashboard,clientes:renderClientes,marcas:renderMarcas,ventas:renderVentas,previsto:renderPrevisto,directorio:renderDirectorio,pipeline:renderPipeline,oportunidades:renderOportunidades,tareas:renderTareas,seguimiento:renderSeguimiento,promociones:renderPromociones,compromisos:renderCompromisos,trabajadores:renderTrabajadores};
   if(renders[id]) renders[id]();
   applyReadOnlyMode(id);
 }
@@ -929,26 +1172,35 @@ function dashRenderComp(){
       filas.push({label:m, idx:i, ant, act, esFuturo: i>mesActIdx});
     });
   } else if(mode==='acumulado'){
-    // Último mes con ventas reales (año actual)
-    let ultimoMesConVentas=0;
-    MESES.forEach((m,i)=>{ if(vMesAno(m,anoAct)>0) ultimoMesConVentas=i; });
+    // Primer y último mes con datos en cualquiera de los dos años
+    let primerMes=11, ultimoMes=0;
+    MESES.forEach((m,i)=>{
+      if(vMesAno(m,anoAnt)>0||vMesAno(m,anoAct)>0){ if(i<primerMes)primerMes=i; if(i>ultimoMes)ultimoMes=i; }
+    });
     let sumAnt=0, sumAct=0;
-    for(let i=0;i<=ultimoMesConVentas;i++){
+    for(let i=primerMes;i<=ultimoMes;i++){
       const m=MESES[i];
       sumAnt+=vMesAno(m,anoAnt); sumAct+=vMesAno(m,anoAct);
-      filas.push({label:i===0?'Ene':`Ene–${m}`, idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
+      filas.push({label:i===primerMes?m:`${MESES[primerMes]}–${m}`, idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
     }
   } else if(mode==='rango'){
+    // Trim rango to only months with data
+    let primerMes=fromIdx, ultimoMes=toIdx;
+    while(primerMes<=toIdx&&vMesAno(MESES[primerMes],anoAnt)===0&&vMesAno(MESES[primerMes],anoAct)===0) primerMes++;
+    while(ultimoMes>=fromIdx&&vMesAno(MESES[ultimoMes],anoAnt)===0&&vMesAno(MESES[ultimoMes],anoAct)===0) ultimoMes--;
     let sumAnt=0, sumAct=0;
-    for(let i=fromIdx;i<=toIdx;i++){
+    for(let i=primerMes;i<=Math.max(primerMes,ultimoMes);i++){
       sumAnt+=vMesAno(MESES[i],anoAnt); sumAct+=vMesAno(MESES[i],anoAct);
-      filas.push({label:MESES[i], idx:i, ant:sumAnt, act:sumAct, esFuturo: i>mesActIdx});
+      filas.push({label:MESES[i], idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
     }
   }
 
   const maxVal=Math.max(...filas.flatMap(f=>[f.ant,f.act]),1);
-  const totAnt=filas.reduce((a,f)=>a+(f.esFuturo?0:f.ant),0);
-  const totAct=filas.reduce((a,f)=>a+(f.esFuturo?0:f.act),0);
+  // Para acumulado y rango el TOTAL es el último valor (ya es el acumulado final)
+  // Para mesmes el TOTAL es la suma real
+  const lastFila=filas.filter(f=>!f.esFuturo).slice(-1)[0]||{ant:0,act:0};
+  const totAnt=mode==='mesmes'?filas.reduce((a,f)=>a+(f.esFuturo?0:f.ant),0):lastFila.ant;
+  const totAct=mode==='mesmes'?filas.reduce((a,f)=>a+(f.esFuturo?0:f.act),0):lastFila.act;
   const totDelta=totAnt>0?((totAct-totAnt)/totAnt*100):0;
 
   // KPIs resumen arriba
@@ -1856,7 +2108,7 @@ async function saveOportunidades(){
   try{ await window.storage.set(OPORT_KEY,JSON.stringify(DB_OPORTUNIDADES),true); }catch(e){}
 }
 
-let oportCols = {fabricante:true,aportacion:true,cliente_oport:true,comprador:true,surtido:true,notas_surtido:true,estado:true,fecha_cierre:true};
+let oportCols = {fabricante:true,aportacion:true,cliente:true,comprador_oport:true,comprador:true,surtido:true,notas_surtido:true,estado:true,fecha_cierre:true};
 
 function renderOportunidades(){
   const total=DB_OPORTUNIDADES.reduce((a,o)=>a+(parseFloat(o.aportacion)||0),0);
@@ -1872,7 +2124,7 @@ function renderOportunidades(){
     <div id="oport-col-picker" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:10px;padding:12px 16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Columnas visibles</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente_oport','Cliente'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']].map(([k,l])=>
+        ${[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente','Cliente'],['comprador_oport','Comprador'],['comprador','Contacto'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']].map(([k,l])=>
           `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;font-weight:600">
             <input type="checkbox" ${oportCols[k]?'checked':''} onchange="oportCols['${k}']=this.checked;renderOportTable()">
             ${l}</label>`).join('')}
@@ -1899,30 +2151,34 @@ function renderOportTable(){
   const tbody=document.getElementById('oport-tbody');
   const empty=document.getElementById('oport-empty');
   const sm={Propuesta:'tw-hot',Negociación:'tw-warm',Ganado:'tw-won',Perdido:'tw-lost','Cliente Potencial':'tw-cold',Prospecto:'tw-cold'};
-  const colDefs=[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente_oport','Cliente'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']];
+  const colDefs=[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente','Cliente'],['comprador_oport','Comprador'],['comprador','Contacto'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']];
   if(thead)thead.innerHTML=colDefs.filter(([k])=>oportCols[k]).map(([,l])=>`<th>${l}</th>`).join('')+'<th></th>';
-  if(!DB_OPORTUNIDADES.length){if(tbody)tbody.innerHTML='';if(empty)empty.style.display='block';return;}
-  if(empty)empty.style.display='none';
-  if(tbody)tbody.innerHTML=DB_OPORTUNIDADES.map(o=>{
+  if(!tbody)return;
+  tbody.innerHTML=DB_OPORTUNIDADES.map(o=>{
+    const sm={Prospecto:'tw-cold','Cliente Potencial':'tw-cold',Calificación:'tw-warm',Propuesta:'tw-hot',Negociación:'tw-hot',Ganado:'tw-won',Perdido:'tw-lost'};
     const cells=[];
     if(oportCols.fabricante)cells.push(`<td><strong>${o.fabricante||''}</strong></td>`);
     if(oportCols.aportacion)cells.push(`<td style="color:var(--grn);font-weight:700">${o.aportacion?'€'+parseFloat(o.aportacion).toLocaleString():'—'}</td>`);
-    if(oportCols.listing)cells.push(`<td><span style="background:#EDE9FE;color:#5B21B6;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:700">${o.cliente_oport||'—'}</span></td>`);
+    if(oportCols.cliente)cells.push(`<td style="font-weight:600">${o.cliente||'—'}</td>`);
+    if(oportCols.comprador_oport)cells.push(`<td><span style="background:#EDE9FE;color:#5B21B6;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:700">${o.comprador_oport||o.cliente_oport||'—'}</span></td>`);
     if(oportCols.comprador)cells.push(`<td style="color:var(--mut)">${o.comprador||'—'}</td>`);
     if(oportCols.surtido)cells.push(`<td style="font-size:11.5px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.surtido||''}">${o.surtido||'—'}</td>`);
     if(oportCols.notas_surtido)cells.push(`<td style="font-size:11px;color:var(--mut);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.notas_surtido||''}">${o.notas_surtido||'—'}</td>`);
     if(oportCols.estado)cells.push(`<td><span class="tag ${sm[o.estado]||'tw-cold'}"><span class="dot"></span>${o.estado||'—'}</span></td>`);
     if(oportCols.fecha_cierre)cells.push(`<td style="font-size:11px;color:var(--mut)">${o.fecha_cierre||'—'}</td>`);
     return`<tr>${cells.join('')}<td style="white-space:nowrap">
-      <button class="bico e" onclick="editOportunidad(${o._id})" title="Editar"><i class="ti ti-pencil"></i></button>
+      <button class="bico e" onclick="editOportunidad(${o._id})"><i class="ti ti-pencil"></i></button>
       <button class="bico d" onclick="confirmDelOport(${o._id},'${(o.fabricante||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
     </td></tr>`;
   }).join('');
+  if(!DB_OPORTUNIDADES.length){if(tbody)tbody.innerHTML='';if(empty)empty.style.display='block';return;}
+  if(empty)empty.style.display='none';
 }
 function openOportunidadModal(id){
   const o=id!=null?DB_OPORTUNIDADES.find(x=>x._id===id)||{}:{};
+  const clientes=DB.clientes.map(c=>c.nombre).sort();
   currentModal=id!=null?'edit-oport':'oport';
-  document.getElementById('mttl').innerHTML='<i class="ti ti-bulb"></i>'+(id!=null?'Editar':'Nueva')+' Oportunidad — Fabricante';
+  document.getElementById('mttl').innerHTML='<i class="ti ti-bulb"></i>'+(id!=null?'Editar':'Nueva')+' Oportunidad';
   document.getElementById('mbody').innerHTML=`
     <input type="hidden" id="m-id" value="${o._id||''}">
     <div class="fr">
@@ -1930,9 +2186,13 @@ function openOportunidadModal(id){
       <div class="fg"><div class="fl">Aportación del fabricante (€)</div><input class="fi" id="m-aportacion" type="number" value="${o.aportacion||''}"></div>
     </div>
     <div class="fr">
-      <div class="fg"><div class="fl">Listing</div><input class="fi" id="m-cliente-oport" value="${o.listing||''}" placeholder="Nombre del cliente"></div>
-      <div class="fg"><div class="fl">Comprador</div><input class="fi" id="m-comprador" value="${o.comprador||''}" placeholder="Nombre del comprador"></div>
+      <div class="fg"><div class="fl">Cliente</div>
+        <input class="fi" id="m-cliente-oport2" list="m-cli-oport-list" value="${o.cliente||''}" placeholder="Empresa cliente">
+        <datalist id="m-cli-oport-list">${clientes.map(n=>`<option value="${n}">`).join('')}</datalist>
+      </div>
+      <div class="fg"><div class="fl">Comprador</div><input class="fi" id="m-comprador-oport" value="${o.comprador_oport||o.cliente_oport||''}" placeholder="Nombre del comprador"></div>
     </div>
+    <div class="fg"><div class="fl">Contacto</div><input class="fi" id="m-comprador" value="${o.comprador||''}" placeholder="Contacto en el cliente"></div>
     <div class="fg"><div class="fl">Surtido</div><input class="fi" id="m-surtido" value="${o.surtido||''}" placeholder="Descripción del surtido"></div>
     <div class="fg"><div class="fl">Notas de surtido</div><textarea class="fi" id="m-notas-surtido" rows="3" placeholder="Notas adicionales sobre el surtido">${o.notas_surtido||''}</textarea></div>
     <div class="fr">
@@ -1949,7 +2209,7 @@ function editOportunidad(id){openOportunidadModal(id);}
 async function saveOportunidad(){
   const fab=document.getElementById('m-fabricante')?.value?.trim();if(!fab){toast('⚠ Indica el fabricante');return;}
   const id=parseInt(document.getElementById('m-id')?.value||'');
-  const obj={fabricante:fab,aportacion:parseFloat(document.getElementById('m-aportacion')?.value)||0,cliente_oport:document.getElementById('m-cliente-oport')?.value||'',comprador:document.getElementById('m-comprador')?.value||'',surtido:document.getElementById('m-surtido')?.value||'',notas_surtido:document.getElementById('m-notas-surtido')?.value||'',estado:document.getElementById('m-estado-oport')?.value||'Cliente Potencial',fecha_cierre:document.getElementById('m-fecha-cierre')?.value||''};
+  const obj={fabricante:fab,aportacion:parseFloat(document.getElementById('m-aportacion')?.value)||0,cliente:document.getElementById('m-cliente-oport2')?.value||'',comprador_oport:document.getElementById('m-comprador-oport')?.value||'',comprador:document.getElementById('m-comprador')?.value||'',surtido:document.getElementById('m-surtido')?.value||'',notas_surtido:document.getElementById('m-notas-surtido')?.value||'',estado:document.getElementById('m-estado-oport')?.value||'Cliente Potencial',fecha_cierre:document.getElementById('m-fecha-cierre')?.value||''};
   if(id){const o=DB_OPORTUNIDADES.find(x=>x._id===id);if(o)Object.assign(o,obj);}
   else{obj._id=nextId(DB_OPORTUNIDADES);DB_OPORTUNIDADES.push(obj);}
   await saveOportunidades();writeActivity("oportunidades");toast('✓ Oportunidad guardada');closeModal();renderOportunidades();
@@ -1972,38 +2232,174 @@ async function saveCompromisos(){
 }
 
 function renderCompromisos(){
+  const depts=[...new Set(DB_COMPROMISOS.map(c=>c.departamento).filter(Boolean))].sort();
+  const clientes=[...new Set(DB_COMPROMISOS.map(c=>c.cliente).filter(Boolean))].sort();
   document.getElementById('content').innerHTML=`
     <div class="ph"><div class="pt"><i class="ti ti-file-check"></i>Compromisos Clientes</div>
       <button class="btn btn-primary" onclick="openCompromisoModal()"><i class="ti ti-plus"></i>Nuevo compromiso</button>
     </div>
-    <div class="card"><div class="tw" style="overflow-x:scroll">
-      <table><thead><tr>
-        <th>Cliente</th><th>Departamento</th><th>Tipo de tienda</th><th>Surtido</th><th>Tipo de compromiso</th><th style="text-align:right">Importe (€)</th><th></th>
-      </tr></thead>
-      <tbody id="comp-tbody"></tbody></table>
+    <!-- Filtros -->
+    <div class="card" style="margin-bottom:10px;padding:10px 16px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <i class="ti ti-filter" style="color:var(--mut);font-size:14px"></i>
+        <input class="fi" id="comp-f-cli" placeholder="Buscar cliente..." style="width:160px;padding:5px 10px" oninput="renderCompromisosTable()" list="comp-f-cli-list">
+        <datalist id="comp-f-cli-list">${clientes.map(n=>`<option value="${n}">`).join('')}</datalist>
+        <select class="fi" id="comp-f-dep" style="width:160px;padding:5px 10px" onchange="renderCompromisosTable()">
+          <option value="">Todos los departamentos</option>
+          ${depts.map(d=>`<option value="${d}">${d}</option>`).join('')}
+        </select>
+        <input class="fi" id="comp-f-imp" type="number" placeholder="Importe..." style="width:110px;padding:5px 10px" oninput="renderCompromisosTable()">
+        <button class="btn btn-sm" onclick="document.getElementById('comp-f-cli').value='';document.getElementById('comp-f-dep').value='';document.getElementById('comp-f-imp').value='';renderCompromisosTable()">
+          <i class="ti ti-x"></i> Limpiar
+        </button>
+        <span id="comp-f-count" style="font-size:11px;color:var(--mut);margin-left:auto"></span>
+      </div>
+    </div>
+    <div class="card"><div style="overflow-x:auto">
+      <table style="border-collapse:collapse;width:100%;font-size:12px" id="comp-table">
+        <thead><tr style="background:var(--bg)">
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Cliente</th>
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Departamento</th>
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Tipo tienda</th>
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Surtido</th>
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Tipo compromiso</th>
+          <th style="padding:7px 12px;text-align:right;border-bottom:1.5px solid var(--brd)">Importe</th>
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Ejercicio</th>
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Realizado</th>
+          <th style="padding:7px 12px;text-align:left;border-bottom:1.5px solid var(--brd)">Observaciones</th>
+          <th style="padding:7px 12px;text-align:center;border-bottom:1.5px solid var(--brd)">PDF</th>
+          <th style="padding:7px 12px;border-bottom:1.5px solid var(--brd)"></th>
+        </tr></thead>
+        <tbody id="comp-tbody"></tbody>
+      </table>
       <div id="comp-empty" class="nodata" style="display:none">Sin compromisos registrados.</div>
     </div></div>`;
   renderCompromisosTable();
 }
+
 function renderCompromisosTable(){
   const tbody=document.getElementById('comp-tbody');
   const empty=document.getElementById('comp-empty');
-  if(!DB_COMPROMISOS.length){if(tbody)tbody.innerHTML='';if(empty)empty.style.display='block';return;}
+  const count=document.getElementById('comp-f-count');
+  if(!tbody) return;
+
+  const fCli=(document.getElementById('comp-f-cli')?.value||'').toLowerCase().trim();
+  const fDep=(document.getElementById('comp-f-dep')?.value||'').toLowerCase().trim();
+  const fImp=parseFloat(document.getElementById('comp-f-imp')?.value)||0;
+
+  let list=[...DB_COMPROMISOS];
+  if(fCli) list=list.filter(c=>(c.cliente||'').toLowerCase().includes(fCli));
+  if(fDep) list=list.filter(c=>(c.departamento||'').toLowerCase()===fDep);
+  if(fImp) list=list.filter(c=>(c.importe||0)>=fImp);
+
+  if(!list.length){if(empty)empty.style.display='block';tbody.innerHTML='';if(count)count.textContent='0 compromisos';return;}
   if(empty)empty.style.display='none';
-  const sorted=[...DB_COMPROMISOS].sort((a,b)=>(a.cliente||'').localeCompare(b.cliente||'','es'));
-  if(tbody)tbody.innerHTML=sorted.map(c=>{
-    return`<tr>
-    <td style="font-weight:700;color:var(--acc)">${c.cliente||'—'}</td>
-    <td>${c.departamento||'—'}</td>
-    <td style="font-size:11.5px">${c.tipo_tienda||'—'}</td>
-    <td style="font-size:11.5px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.surtido||'—'}</td>
-    <td><span style="background:#EEF5FC;color:var(--acc);padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700">${c.tipo||'—'}</span></td>
-    <td style="text-align:right;font-weight:700;color:var(--grn)">${c.importe?'€'+parseFloat(c.importe).toLocaleString('es-ES'):'—'}</td>
-    <td style="white-space:nowrap">
-      <button class="bico e" onclick="openCompromisoModal(${c._id})" title="Editar"><i class="ti ti-pencil"></i></button>
-      <button class="bico d" onclick="deleteCompromiso(${c._id})"><i class="ti ti-trash"></i></button>
-    </td>
-  </tr>`;}).join('');
+  if(count)count.textContent=list.length+' compromiso'+(list.length===1?'':'s');
+
+  // Agrupar por departamento
+  const grupos={};
+  const sinDep=[];
+  list.forEach(c=>{
+    if(c.departamento){ if(!grupos[c.departamento])grupos[c.departamento]=[]; grupos[c.departamento].push(c); }
+    else sinDep.push(c);
+  });
+
+  // Ordenar grupos
+  const deptKeys=Object.keys(grupos).sort();
+  if(sinDep.length) deptKeys.push('__sin__');
+  grupos['__sin__']=sinDep;
+
+  const NCOLS=10;
+  let html='';
+  deptKeys.forEach(dep=>{
+    const rows=grupos[dep];
+    const depLabel=dep==='__sin__'?'Sin departamento':dep;
+    const groupId='cg_'+dep.replace(/[^a-z0-9]/gi,'_');
+    const totalDep=rows.reduce((a,c)=>a+(c.importe||0),0);
+
+    // Fila cabecera de grupo (solo si hay más de un grupo)
+    if(deptKeys.length>1){
+      html+=`<tr id="${groupId}_hdr" style="background:#EEF2F8;cursor:pointer" onclick="toggleCompGroup('${groupId}')">
+        <td colspan="${NCOLS}" style="padding:7px 14px;font-weight:700;font-size:12px;color:var(--acc)">
+          <i class="ti ti-chevron-down" id="${groupId}_ico" style="font-size:11px;margin-right:6px;transition:.2s"></i>
+          ${depLabel}
+          <span style="font-size:10px;font-weight:400;color:var(--mut);margin-left:8px">${rows.length} compromiso${rows.length===1?'':'s'}</span>
+          ${totalDep?`<span style="font-size:11px;font-weight:700;color:var(--grn);margin-left:12px">€${Math.round(totalDep).toLocaleString('es-ES')}</span>`:''}
+        </td>
+      </tr>`;
+    }
+
+    rows.sort((a,b)=>(a.cliente||'').localeCompare(b.cliente||'','es')).forEach((c,ri)=>{
+      const ej=c.ejercicio_desde?(c.ejercicio_hasta&&c.ejercicio_hasta!==c.ejercicio_desde?c.ejercicio_desde+'–'+c.ejercicio_hasta:c.ejercicio_desde):'—';
+      const hasPdf=!!(c.pdf_base64);
+      html+=`<tr class="${groupId}_row" style="background:${ri%2===0?'transparent':'var(--bg)'}">
+        <td style="padding:7px 12px;font-weight:700;color:var(--acc)">${c.cliente||'—'}</td>
+        <td style="padding:7px 12px;font-size:11.5px">${c.departamento||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;color:var(--mut)">${c.tipo_tienda||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.surtido||''}">${c.surtido||'—'}</td>
+        <td style="padding:7px 12px"><span style="background:#EEF5FC;color:var(--acc);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${c.tipo||'—'}</span></td>
+        <td style="padding:7px 12px;text-align:right;font-weight:700;color:var(--grn)">${c.importe?'€'+parseFloat(c.importe).toLocaleString('es-ES'):'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;color:var(--mut);white-space:nowrap">${ej}</td>
+        <td style="padding:7px 12px;font-size:11px;color:var(--mut)">${c.fecha_realizacion||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;color:var(--mut);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.observaciones||''}">${c.observaciones||'—'}</td>
+        <td style="padding:7px 12px;text-align:center">
+          ${hasPdf
+            ?`<div style="display:flex;gap:4px;justify-content:center">
+                <button class="bico" title="Ver PDF" onclick="viewCompPDF(${c._id})"><i class="ti ti-eye"></i></button>
+                <button class="bico d" title="Eliminar PDF" onclick="deleteCompPDF(${c._id})"><i class="ti ti-file-off"></i></button>
+              </div>`
+            :`<label title="Adjuntar plantilla PDF" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border:1px solid var(--brd);border-radius:6px;font-size:10px;color:var(--mut);background:var(--sur)">
+                <i class="ti ti-file-upload" style="font-size:12px"></i>PDF
+                <input type="file" accept=".pdf" style="display:none" data-cid="${c._id}" onchange="attachCompPDF(this)">
+              </label>`}
+        </td>
+        <td style="padding:7px 12px;white-space:nowrap">
+          <button class="bico e" onclick="openCompromisoModal(${c._id})"><i class="ti ti-pencil"></i></button>
+          <button class="bico d" onclick="deleteCompromiso(${c._id})"><i class="ti ti-trash"></i></button>
+        </td>
+      </tr>`;
+    });
+  });
+  tbody.innerHTML=html;
+}
+
+function toggleCompGroup(groupId){
+  const rows=document.querySelectorAll('.'+groupId+'_row');
+  const ico=document.getElementById(groupId+'_ico');
+  const hidden=rows[0]?.style.display==='none';
+  rows.forEach(r=>r.style.display=hidden?'':'none');
+  if(ico) ico.style.transform=hidden?'':'rotate(-90deg)';
+}
+
+async function attachCompPDF(input){
+  const file=input.files[0]; if(!file) return;
+  const cid=parseInt(input.dataset.cid);
+  const c=DB_COMPROMISOS.find(x=>x._id===cid); if(!c) return;
+  if(file.size>5*1024*1024){toast('⚠ El PDF no puede superar 5 MB');input.value='';return;}
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    c.pdf_base64=e.target.result; // data:application/pdf;base64,...
+    c.pdf_nombre=file.name;
+    await saveCompromisos();
+    toast(`✓ PDF adjuntado: ${file.name}`);
+    renderCompromisosTable();
+  };
+  reader.readAsDataURL(file);
+}
+
+function viewCompPDF(id){
+  const c=DB_COMPROMISOS.find(x=>x._id===id); if(!c?.pdf_base64) return;
+  const win=window.open();
+  win.document.write(`<html><head><title>${c.pdf_nombre||'Plantilla'}</title></head>
+    <body style="margin:0"><embed src="${c.pdf_base64}" type="application/pdf" width="100%" height="100%"/></body></html>`);
+}
+
+async function deleteCompPDF(id){
+  const c=DB_COMPROMISOS.find(x=>x._id===id); if(!c) return;
+  delete c.pdf_base64; delete c.pdf_nombre;
+  await saveCompromisos();
+  toast('✓ PDF eliminado');
+  renderCompromisosTable();
 }
 function openCompromisoModal(id){
   const c=id!=null?DB_COMPROMISOS.find(x=>x._id===id)||{}:{};
@@ -2027,11 +2423,26 @@ function openCompromisoModal(id){
       </div>
     </div>
     <div class="fg"><div class="fl">Surtido</div><input class="fi" id="m-comp-sur" value="${c.surtido||''}" placeholder="Descripción del surtido"></div>
+    <div class="fg"><div class="fl">Observaciones</div><textarea class="fi" id="m-comp-obs" rows="3" style="resize:vertical" placeholder="Notas u observaciones adicionales">${c.observaciones||''}</textarea></div>
     <div class="fr">
       <div class="fg"><div class="fl">Tipo de compromiso</div>
         <input class="fi" id="m-comp-tipo" value="${c.tipo||''}" placeholder="Ej: Exclusividad, Volumen...">
       </div>
       <div class="fg"><div class="fl">Importe (€)</div><input class="fi" id="m-comp-imp" type="number" min="0" step="0.01" value="${c.importe||''}" placeholder="0,00"></div>
+    </div>
+    <div style="border-top:1px solid var(--brd);margin-top:10px;padding-top:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--acc);margin-bottom:8px"><i class="ti ti-calendar-event"></i> Ejercicio y realización</div>
+      <div class="fr">
+        <div class="fg"><div class="fl">Ejercicio — Desde (año)</div>
+          <input class="fi" id="m-comp-ej-desde" type="number" min="2020" max="2035" step="1" value="${c.ejercicio_desde||new Date().getFullYear()}" placeholder="${new Date().getFullYear()}">
+        </div>
+        <div class="fg"><div class="fl">Ejercicio — Hasta (año)</div>
+          <input class="fi" id="m-comp-ej-hasta" type="number" min="2020" max="2035" step="1" value="${c.ejercicio_hasta||new Date().getFullYear()}" placeholder="${new Date().getFullYear()}">
+        </div>
+        <div class="fg"><div class="fl">Fecha de realización</div>
+          <input class="fi" id="m-comp-fecha-real" type="date" value="${c.fecha_realizacion||''}">
+        </div>
+      </div>
     </div>`;
   document.getElementById('mfoot').innerHTML=(id!=null?`<button class="btn btn-red btn-sm" onclick="deleteCompromiso(${id});closeModal()"><i class="ti ti-trash"></i>Eliminar</button><div style="flex:1"></div>`:'')
     +`<button class="btn btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" onclick="saveCompromiso()">Guardar</button>`;
@@ -2059,8 +2470,12 @@ async function saveCompromiso(){
     departamento: document.getElementById('m-comp-dep')?.value||'',
     tipo_tienda: document.getElementById('m-comp-ttienda')?.value||'',
     surtido: document.getElementById('m-comp-sur')?.value?.trim()||'',
+    observaciones: document.getElementById('m-comp-obs')?.value?.trim()||'',
     tipo: document.getElementById('m-comp-tipo')?.value||'',
-    importe: parseFloat(document.getElementById('m-comp-imp')?.value)||0
+    importe: parseFloat(document.getElementById('m-comp-imp')?.value)||0,
+    ejercicio_desde: parseInt(document.getElementById('m-comp-ej-desde')?.value)||new Date().getFullYear(),
+    ejercicio_hasta: parseInt(document.getElementById('m-comp-ej-hasta')?.value)||new Date().getFullYear(),
+    fecha_realizacion: document.getElementById('m-comp-fecha-real')?.value||''
   };
   if(id){const c=DB_COMPROMISOS.find(x=>x._id===id);if(c)Object.assign(c,obj);}
   else{obj._id=nextId(DB_COMPROMISOS);DB_COMPROMISOS.push(obj);}
@@ -3237,7 +3652,10 @@ function renderMarcas(){
     </div>
     <!-- Sobrestock -->
     <div class="card" style="margin-bottom:10px">
-      <div class="ch"><div class="ct"><i class="ti ti-stack-2" style="color:var(--amb)"></i> Sobrestock</div></div>
+      <div class="ch">
+        <div class="ct"><i class="ti ti-stack-2" style="color:var(--amb)"></i> Sobrestock</div>
+        <button class="btn btn-sm" onclick="openPyG()" style="font-weight:700"><i class="ti ti-chart-line"></i>Pérdidas y Ganancias</button>
+      </div>
       <div style="overflow-x:auto"><table style="font-size:11px;width:100%">
         <thead><tr>
           <th style="padding:4px 10px;min-width:200px">Campo</th>
@@ -3530,6 +3948,86 @@ async function saveSobrestock(mes,campo){
   await saveMarcas();
   renderSobrestock();
   toast(`✓ Sobrestock ${mes}: €${val.toLocaleString('es-ES')}`);
+}
+
+// ══ PÉRDIDAS Y GANANCIAS ══
+const PYG_KEY='inasa_pyg_v1';
+let _pygData=null; // {headers:[], rows:[][]}
+
+async function openPyG(){
+  const el=document.getElementById('pyg-overlay');
+  if(!el) return;
+  el.style.display='flex';
+  // Intentar cargar datos guardados
+  if(!_pygData){
+    try{
+      const r=await window.storage.get(PYG_KEY,true);
+      if(r) _pygData=JSON.parse(r.value);
+    }catch(e){}
+  }
+  if(_pygData) renderPyGTable();
+}
+function closePyG(){
+  const el=document.getElementById('pyg-overlay');
+  if(el) el.style.display='none';
+}
+
+function handlePyGXL(input){
+  const file=input.files[0]; if(!file) return;
+  const body=document.getElementById('pyg-body');
+  body.innerHTML='<div style="padding:40px;text-align:center;color:var(--mut)">⏳ Leyendo archivo...</div>';
+  ensureXLSX().then(()=>{
+    const reader=new FileReader();
+    reader.onload=async function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        if(!rows.length){body.innerHTML='<div style="padding:40px;text-align:center;color:var(--red)">⚠ Archivo vacío</div>';return;}
+        // Primera fila = cabecera
+        const headers=rows[0].map(c=>String(c||'').trim());
+        const dataRows=rows.slice(1).filter(r=>r.some(c=>c!==''&&c!==0));
+        _pygData={headers, rows:dataRows};
+        await window.storage.set(PYG_KEY,JSON.stringify(_pygData),true);
+        input.value='';
+        renderPyGTable();
+      }catch(err){body.innerHTML=`<div style="padding:40px;text-align:center;color:var(--red)">⚠ Error: ${err.message}</div>`;}
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function renderPyGTable(){
+  const body=document.getElementById('pyg-body');
+  if(!body||!_pygData) return;
+  const {headers,rows}=_pygData;
+  // Detectar columnas numéricas para alinear y colorear
+  const isNum=headers.map((_,ci)=>rows.some(r=>typeof r[ci]==='number'||(/^-?[\d.,]+$/.test(String(r[ci]||'').trim())&&String(r[ci]||'').trim()!=='')));
+  const fmtCell=(v,num)=>{
+    if(!num) return String(v??'');
+    const n=typeof v==='number'?v:parseFloat(String(v||'').replace(/[^0-9.,-]/g,'').replace(',','.'));
+    if(isNaN(n)||String(v||'').trim()==='') return '—';
+    return (n<0?'<span style="color:#A32D2D">':'<span style="color:inherit">')+(n>=0?'':'')+Math.abs(n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+(n<0?'</span>':'</span>');
+  };
+  body.innerHTML=`
+    <div style="overflow:auto;border:1px solid var(--brd);border-radius:10px">
+    <table style="border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap">
+      <thead style="position:sticky;top:0;z-index:2">
+        <tr style="background:#EEF2F8">
+          ${headers.map((h,i)=>`<th style="padding:8px 14px;text-align:${isNum[i]?'right':'left'};border-bottom:2px solid var(--brd);font-size:11px;font-weight:700;color:var(--acc)">${h||'—'}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r,ri)=>{
+          const isEmpty=!r[0]&&!r[1];
+          if(isEmpty) return `<tr><td colspan="${headers.length}" style="padding:4px"></td></tr>`;
+          const isBold=String(r[0]||'').trim()===String(r[0]||'').trim().toUpperCase()&&String(r[0]||'').trim().length>2;
+          return`<tr style="background:${ri%2===0?'transparent':'var(--bg)'}${isBold?';border-top:1.5px solid var(--brd)':''}">
+            ${headers.map((_,ci)=>`<td style="padding:${isBold?'9':'6'}px 14px;text-align:${isNum[ci]?'right':'left'};font-weight:${isBold?'700':'400'};border-bottom:0.5px solid var(--brd)">${fmtCell(r[ci],isNum[ci])}</td>`).join('')}
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>`;
 }
 
 function toggleSelectAllMarcas(checked){
@@ -5418,7 +5916,7 @@ async function bootApp() {
   }
 
   // Carga datos principales (DB + trabajadores) primero para mostrar UI cuanto antes
-  await Promise.all([loadDB(), loadTrabajadores(), loadAliases(), loadHistorico()]);
+  await Promise.all([loadDB(), loadTrabajadores(), loadAliases(), loadHistorico(), loadPrevisto()]);
   updateBadge();
   renderDashboard();
   showUserSelect();
@@ -6120,6 +6618,26 @@ function abrirConfiguracion(){
           <i class="ti ti-login"></i> Entrar
         </button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PÉRDIDAS Y GANANCIAS OVERLAY ══ -->
+<div id="pyg-overlay" style="display:none;position:fixed;inset:0;z-index:1000;background:var(--bg);flex-direction:column">
+  <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1.5px solid var(--brd);background:var(--sur);flex-shrink:0">
+    <i class="ti ti-chart-line" style="font-size:20px;color:var(--acc)"></i>
+    <div style="font-size:16px;font-weight:700;flex:1">Pérdidas y Ganancias</div>
+    <label style="display:flex;align-items:center;gap:6px;padding:6px 14px;border:1.5px solid var(--acc);border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;color:var(--acc);background:var(--sur)">
+      <i class="ti ti-file-upload"></i> Cargar Excel
+      <input type="file" id="pyg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handlePyGXL(this)">
+    </label>
+    <button onclick="closePyG()" style="padding:6px 14px;border-radius:8px;border:1px solid var(--brd);background:var(--sur);cursor:pointer;font-size:13px;font-weight:700"><i class="ti ti-x"></i> Cerrar</button>
+  </div>
+  <div id="pyg-body" style="flex:1;overflow:auto;padding:20px">
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--mut);gap:12px">
+      <i class="ti ti-table-import" style="font-size:48px;opacity:.3"></i>
+      <div style="font-size:14px">Carga un Excel para visualizar las pérdidas y ganancias</div>
+      <div style="font-size:12px;opacity:.7">Formatos admitidos: .xlsx · .xls · .csv</div>
     </div>
   </div>
 </div>
