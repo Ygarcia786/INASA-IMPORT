@@ -474,104 +474,497 @@ function renderDashboard() {
   const dealsA = DB.pipeline.filter(d => !['Ganado','Perdido'].includes(d.estado)).length;
   const tPend  = DB.tareas.filter(t => !t.done).length;
 
-  // mes en curso
   const now = new Date();
+  const anoAct = now.getFullYear();
+  const anoAnt = anoAct - 1;
   const mesActualIdx = now.getMonth();
-  const mesActual = MESES[mesActualIdx];
-  const ventasMesActual = DB.clientes.reduce((a,c)=>a+c.ventas.filter(v=>v.mes===mesActual).reduce((s,v)=>s+(v.importe||0),0),0);
+  const mesAntIdx = (mesActualIdx + 11) % 12;
+  const mesAnt = MESES[mesAntIdx];
 
-  // top clientes
+  // ventas por año/mes
+  const vPorAnoMes = (ano, mes) => DB.clientes.reduce((a,c)=>
+    a + c.ventas.filter(v=>v.mes===mes&&(v.año||anoAct)===ano).reduce((s,v)=>s+(v.importe||0),0), 0);
+
+  const ventasMesAnt = vPorAnoMes(anoAct, mesAnt);
+
   const cliTots = DB.clientes.map(c => ({n:c.nombre, v:c.ventas.reduce((a,x)=>a+(x.importe||0),0)}))
     .sort((a,b) => b.v-a.v).slice(0,7);
   const maxC = Math.max(...cliTots.map(x=>x.v), 1);
 
-  // meses
-  const mTots = MESES.map(m => DB.clientes.reduce((a,c)=>a+c.ventas.filter(v=>v.mes===m).reduce((s,v)=>s+(v.importe||0),0),0));
-  const maxM = Math.max(...mTots, 1);
-
-  // próximas promociones por cliente (del mes en curso en adelante)
   const MESES_FULL = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
-  const mesIdxMap = {ENE:0,FEB:1,MAR:2,ABR:3,MAY:4,JUN:5,JUL:6,AGO:7,SEP:8,OCT:9,NOV:10,DIC:11};
-  // Promos del mes actual agrupadas por cliente
   const mesActualFull = MESES_FULL[mesActualIdx];
   const promosEsteMes = DB_PROMOS.filter(p => (p.mes||'').toUpperCase() === mesActualFull);
   const promosPorCliente = {};
-  promosEsteMes.forEach(p => {
-    if(!promosPorCliente[p.cliente]) promosPorCliente[p.cliente] = [];
-    promosPorCliente[p.cliente].push(p);
-  });
+  promosEsteMes.forEach(p => { if(!promosPorCliente[p.cliente]) promosPorCliente[p.cliente]=[]; promosPorCliente[p.cliente].push(p); });
   const clientesConPromos = Object.keys(promosPorCliente).sort();
-
   const sm = {Prospecto:'tw-cold','Cliente Potencial':'tw-cold',Calificación:'tw-warm',Propuesta:'tw-hot',Negociación:'tw-hot',Ganado:'tw-won',Perdido:'tw-lost'};
 
   document.getElementById('content').innerHTML = `
     <div class="ph"><div class="pt"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
       <span style="font-size:12px;color:var(--mut)">${now.toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</span></div>
-    <div class="kgrid" style="grid-template-columns:repeat(5,1fr)">
-      <div class="kcard"><div class="kl"><i class="ti ti-cash"></i> Ventas totales</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div><div class="ks">Acumulado</div></div>
-      <div class="kcard" style="border-color:#A8C4EF;background:#EEF5FC"><div class="kl"><i class="ti ti-calendar-month"></i> Ventas ${mesActual}</div><div class="kv" style="color:var(--acc)">€${Math.round(ventasMesActual).toLocaleString()}</div><div class="ks">Mes en curso</div></div>
-      <div class="kcard"><div class="kl"><i class="ti ti-target"></i> Oportunidades</div><div class="kv" style="color:var(--acc)">${dealsA}</div><div class="ks">En pipeline</div></div>
+
+    <div class="kgrid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kcard"><div class="kl"><i class="ti ti-cash"></i> Ventas totales</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div><div class="ks">Todo el histórico</div></div>
+      <div class="kcard" style="border-color:#A8C4EF;background:#EEF5FC"><div class="kl"><i class="ti ti-calendar-month"></i> Ventas ${mesAnt}</div><div class="kv" style="color:var(--acc)">€${Math.round(ventasMesAnt).toLocaleString()}</div><div class="ks">Mes anterior</div></div>
       <div class="kcard"><div class="kl"><i class="ti ti-building-store"></i> Clientes</div><div class="kv">${DB.clientes.length}</div><div class="ks">Registrados</div></div>
-      <div class="kcard"><div class="kl"><i class="ti ti-checkbox"></i> Tareas pendientes</div><div class="kv" style="color:var(--amb)">${tPend}</div><div class="ks">Sin completar</div></div>
     </div>
-    <div class="g2">
-      <div class="card">
-        <div class="ch"><div class="ct"><i class="ti ti-chart-bar"></i>Top clientes</div></div>
-        <div style="padding:14px 16px 10px">
-          <div class="bchart">${cliTots.map(c=>`<div class="bw">
-            <div class="bv">${c.v>0?Math.round(c.v/1000)+'k':''}</div>
-            <div class="bb" style="height:${Math.max(3,Math.round(c.v/maxC*88))}px" title="${c.n}: €${Math.round(c.v).toLocaleString()}"></div>
-            <div class="bl">${c.n.slice(0,6)}</div>
-          </div>`).join('') || '<div class="nodata" style="width:100%">Sin ventas</div>'}</div>
+
+    <!-- ── COMPARATIVA ANUAL ── -->
+    <div class="card" style="margin-bottom:14px" id="dash-comp-card">
+      <div class="ch" style="flex-wrap:wrap;gap:8px">
+        <div class="ct"><i class="ti ti-table-column"></i>Comparativa ${anoAnt} vs ${anoAct}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:0;border:1px solid var(--brd);border-radius:8px;overflow:hidden">
+          ${[['mesmes','Mes a mes'],['acumulado','Acumulado'],['rango','Rango'],['clientes','Clientes']].map(([k,l])=>`
+            <button onclick="dashSetMode('${k}')" id="dashbtn-${k}" style="padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--brd)">${l}</button>`).join('')}
+        </div>
+        </div>
+        <div id="dash-rango-sel" style="display:none;align-items:center;gap:6px">
+          <span style="font-size:12px;color:var(--mut)">Desde</span>
+          <select id="dash-range-from" class="fi" style="padding:4px 8px;width:auto;font-size:12px" onchange="dashRenderComp()">
+            ${MESES.map((m,i)=>`<option value="${i}">${m}</option>`).join('')}
+          </select>
+          <span style="font-size:12px;color:var(--mut)">hasta</span>
+          <select id="dash-range-to" class="fi" style="padding:4px 8px;width:auto;font-size:12px" onchange="dashRenderComp()">
+            ${MESES.map((m,i)=>`<option value="${i}" ${i===mesAntIdx?'selected':''}>${m}</option>`).join('')}
+          </select>
         </div>
       </div>
-      <div class="card">
-        <div class="ch"><div class="ct"><i class="ti ti-chart-line"></i>Ventas mensuales</div></div>
-        <div style="padding:14px 16px 10px">
-          <div class="bchart">${MESES.map((m,i)=>`<div class="bw">
-            <div class="bv">${mTots[i]>0?Math.round(mTots[i]/1000)+'k':''}</div>
-            <div class="bb" style="height:${Math.max(2,Math.round(mTots[i]/maxM*88))}px;opacity:${mTots[i]>0?1:.18};${m===mesActual?'background:#0A6E50':''}" title="${m}"></div>
-            <div class="bl" style="${m===mesActual?'color:var(--grn);font-weight:700':''}">${m}</div>
-          </div>`).join('')}</div>
+      <div id="dash-ant-status" style="display:none;padding:8px 16px;font-size:12px"></div>
+      <div id="dash-comp"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="ch"><div class="ct"><i class="ti ti-chart-bar"></i>Top clientes</div>
+        <div style="display:flex;gap:10px;align-items:center;font-size:11px;color:var(--mut)">
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#C4D9F0;display:inline-block"></span>${anoAnt}</span>
+          <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--acc);display:inline-block"></span>${anoAct}</span>
         </div>
       </div>
-    </div>
-    <div class="g2">
-      <div class="card">
-        <div class="ch"><div class="ct"><i class="ti ti-star"></i>Oportunidades recientes</div>
-          <button class="btn btn-sm btn-primary" onclick="openModal('deal')"><i class="ti ti-plus"></i>Nueva</button></div>
-        <div class="tw"><table><thead><tr><th>Fabricante</th><th>Aportación</th><th>Estado</th><th>Comercial</th><th>Cierre</th></tr></thead>
-        <tbody>${DB.pipeline.slice(-5).reverse().map(d=>`<tr>
-          <td><strong>${d.empresa}</strong></td>
-          <td style="color:var(--grn);font-weight:700">€${parseFloat(d.valor||0).toLocaleString()}</td>
-          <td><span class="tag ${sm[d.estado]||'tw-cold'}"><span class="dot"></span>${d.estado}</span></td>
-          <td style="color:var(--mut)">${d.comercial||''}</td>
-          <td style="color:var(--mut);font-size:11px">${d.cierre||''}</td>
-        </tr>`).join('') || '<tr><td colspan="5" class="nodata">Sin oportunidades</td></tr>'}</tbody>
-        </table></div>
-      </div>
-      <div class="card">
-        <div class="ch"><div class="ct"><i class="ti ti-calendar-event"></i>Promociones ${mesActualFull.charAt(0)+mesActualFull.slice(1).toLowerCase()}</div>
-          <span style="font-size:11px;color:var(--mut)">${promosEsteMes.length} referencias · ${clientesConPromos.length} clientes</span></div>
-        ${clientesConPromos.length ? `
-        <div style="display:flex;flex-direction:column;gap:6px;padding:8px 12px">
-          ${clientesConPromos.map(cli => {
-            const refs = promosPorCliente[cli];
-            const provs = [...new Set(refs.map(r=>r.marca).filter(Boolean))];
-            const si = refs.filter(r=>r.promo_realizada==='si').length;
-            const no = refs.filter(r=>r.promo_realizada==='no').length;
-            return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg);border:0.5px solid var(--brd);border-radius:8px">
-              <span style="font-size:13px;font-weight:700;color:var(--txt);min-width:70px">${cli}</span>
-              <span style="font-size:11px;color:var(--mut);flex:1">${provs.slice(0,3).join(', ')}${provs.length>3?' +'+( provs.length-3):''}</span>
-              <span style="font-size:11px;color:var(--mut)">${refs.length} refs</span>
-              ${si?`<span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:1px 7px;border-radius:10px;font-weight:600">${si} SÍ</span>`:''}
-              ${no?`<span style="font-size:10px;background:#FCEBEB;color:#A32D2D;padding:1px 7px;border-radius:10px;font-weight:600">${no} NO</span>`:''}
+      <div style="padding:12px 16px 14px">
+      ${(()=>{
+        const cliComp = DB.clientes.map(c=>{
+          const ant=c.ventas.filter(v=>(v.año||anoAct)===anoAnt).reduce((a,v)=>a+(v.importe||0),0);
+          const act=c.ventas.filter(v=>(v.año||anoAct)===anoAct).reduce((a,v)=>a+(v.importe||0),0);
+          return {n:c.nombre, ant, act, tot:act||ant};
+        }).filter(c=>c.tot>0).sort((a,b)=>b.tot-a.tot).slice(0,7);
+        if(!cliComp.length) return '<div class="nodata">Sin ventas</div>';
+        const maxV=Math.max(...cliComp.flatMap(c=>[c.ant,c.act]),1);
+        const fmt=v=>v>=1000000?'€'+(v/1000000).toFixed(2)+'M':v>=1000?'€'+Math.round(v/1000)+'k':'€'+Math.round(v).toLocaleString('es-ES');
+        return `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">
+          ${cliComp.map((c,i)=>{
+            const delta=c.ant>0?((c.act-c.ant)/c.ant*100):null;
+            const dCol=delta===null?'var(--mut)':delta>=0?'#065F46':'#A32D2D';
+            const dBg =delta===null?'var(--bg)' :delta>=0?'#D1FAE5':'#FCEBEB';
+            const hAnt=c.ant>0?Math.max(4,Math.round(c.ant/maxV*72)):0;
+            const hAct=c.act>0?Math.max(4,Math.round(c.act/maxV*72)):0;
+            const medals=['🥇','🥈','🥉'];
+            return `<div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0">
+              <div style="font-size:10px;font-weight:700;color:var(--mut)">${i<3?medals[i]:'#'+(i+1)}</div>
+              <div style="font-size:10px;font-weight:700;color:var(--txt);text-align:center;word-break:break-word;line-height:1.2;min-height:28px;display:flex;align-items:center;justify-content:center">${c.n}</div>
+              <div style="display:flex;align-items:flex-end;gap:4px;height:76px">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                  <div style="font-size:8px;color:var(--mut);font-weight:600">${c.ant>0?fmt(c.ant):''}</div>
+                  <div style="width:18px;border-radius:3px 3px 0 0;background:#C4D9F0;height:${hAnt}px;min-height:${c.ant>0?4:0}px"></div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                  <div style="font-size:8px;color:var(--acc);font-weight:700">${c.act>0?fmt(c.act):''}</div>
+                  <div style="width:18px;border-radius:3px 3px 0 0;background:var(--acc);height:${hAct}px;min-height:${c.act>0?4:0}px"></div>
+                </div>
+              </div>
+              <div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:${dBg};color:${dCol}">
+                ${delta===null?'nuevo':((delta>=0?'+':'')+delta.toFixed(1)+'%')}
+              </div>
             </div>`;
           }).join('')}
-        </div>` :
-        `<div class="nodata"><i class="ti ti-check" style="color:var(--grn)"></i> Sin promociones este mes</div>`}
+        </div>`;
+      })()}
       </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="ch"><div class="ct"><i class="ti ti-calendar-event"></i>Promociones ${mesActualFull.charAt(0)+mesActualFull.slice(1).toLowerCase()}</div>
+        <span style="font-size:11px;color:var(--mut)">${promosEsteMes.length} referencias · ${clientesConPromos.length} clientes</span></div>
+      ${clientesConPromos.length ? `
+      <div style="display:flex;flex-direction:column;gap:6px;padding:8px 12px">
+        ${clientesConPromos.map(cli => {
+          const refs = promosPorCliente[cli];
+          const provs = [...new Set(refs.map(r=>r.marca).filter(Boolean))];
+          const si = refs.filter(r=>r.promo_realizada==='si').length;
+          const no = refs.filter(r=>r.promo_realizada==='no').length;
+          return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg);border:0.5px solid var(--brd);border-radius:8px">
+            <span style="font-size:13px;font-weight:700;color:var(--txt);min-width:70px">${cli}</span>
+            <span style="font-size:11px;color:var(--mut);flex:1">${provs.slice(0,3).join(', ')}${provs.length>3?' +'+(provs.length-3):''}</span>
+            <span style="font-size:11px;color:var(--mut)">${refs.length} refs</span>
+            ${si?`<span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:1px 7px;border-radius:10px;font-weight:600">${si} SÍ</span>`:''}
+            ${no?`<span style="font-size:10px;background:#FCEBEB;color:#A32D2D;padding:1px 7px;border-radius:10px;font-weight:600">${no} NO</span>`:''}
+          </div>`;
+        }).join('')}
+      </div>` :
+      `<div class="nodata"><i class="ti ti-check" style="color:var(--grn)"></i> Sin promociones este mes</div>`}
     </div>`;
+
+  dashSetMode(localStorage.getItem('dash_comp_mode')||'mesmes', true);
+}
+
+function dashSetMode(mode, init){
+  localStorage.setItem('dash_comp_mode', mode);
+  ['mesmes','acumulado','rango','clientes'].forEach(k=>{
+    const b=document.getElementById('dashbtn-'+k);
+    if(!b) return;
+    b.style.background = k===mode ? 'var(--acc)' : 'var(--sur)';
+    b.style.color      = k===mode ? '#fff'       : 'var(--mut)';
+  });
+  const rs=document.getElementById('dash-rango-sel');
+  if(rs) rs.style.display = mode==='rango' ? 'flex' : 'none';
+  dashRenderComp();
+}
+
+function dashRenderComp(){
+  const el=document.getElementById('dash-comp'); if(!el) return;
+  const mode=localStorage.getItem('dash_comp_mode')||'mesmes';
+  const now=new Date();
+  const anoAct=now.getFullYear(), anoAnt=anoAct-1;
+  const mesActIdx=now.getMonth();
+
+  const vMesAno=(mes,ano)=>DB.clientes.reduce((a,c)=>
+    a+c.ventas.filter(v=>v.mes===mes&&(v.año||anoAct)===ano).reduce((s,v)=>s+(v.importe||0),0),0);
+
+  // ── MODO CLIENTES ──
+  if(mode==='clientes'){
+    const cliRows=DB.clientes.map(c=>{
+      const ant=c.ventas.filter(v=>(v.año||anoAct)===anoAnt).reduce((a,v)=>a+(v.importe||0),0);
+      const act=c.ventas.filter(v=>(v.año||anoAct)===anoAct).reduce((a,v)=>a+(v.importe||0),0);
+      return {nombre:c.nombre, ant, act};
+    }).filter(r=>r.ant>0||r.act>0).sort((a,b)=>b.act-a.act||b.ant-a.ant);
+    const maxV=Math.max(...cliRows.flatMap(r=>[r.ant,r.act]),1);
+    const totAnt=cliRows.reduce((a,r)=>a+r.ant,0);
+    const totAct=cliRows.reduce((a,r)=>a+r.act,0);
+    const totD=totAnt>0?((totAct-totAnt)/totAnt*100):0;
+    const kpiFmt=v=>v>=1000000?'€'+(v/1000000).toFixed(2)+'M':v>=1000?'€'+Math.round(v/1000)+'k':'€'+Math.round(v).toLocaleString('es-ES');
+    el.innerHTML=`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px 16px 0">
+        <div style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px 14px">
+          <div style="font-size:11px;color:var(--mut);margin-bottom:4px">${anoAnt} — ${cliRows.filter(r=>r.ant>0).length} clientes</div>
+          <div style="font-size:18px;font-weight:700;color:var(--mut)">${kpiFmt(totAnt)}</div>
+        </div>
+        <div style="background:#EEF5FC;border:1px solid #A8C4EF;border-radius:8px;padding:10px 14px">
+          <div style="font-size:11px;color:var(--acc);margin-bottom:4px">${anoAct} — ${cliRows.filter(r=>r.act>0).length} clientes</div>
+          <div style="font-size:18px;font-weight:700;color:var(--acc)">${kpiFmt(totAct)}</div>
+        </div>
+        <div style="background:${totD>=0?'#D1FAE5':'#FCEBEB'};border:1px solid ${totD>=0?'#6EE7B7':'#FCA5A5'};border-radius:8px;padding:10px 14px">
+          <div style="font-size:11px;color:${totD>=0?'#065F46':'#A32D2D'};margin-bottom:4px"><i class="ti ti-trending-${totD>=0?'up':'down'}"></i> Variación total</div>
+          <div style="font-size:18px;font-weight:700;color:${totD>=0?'#065F46':'#A32D2D'}">${totD>=0?'+':''}${totD.toFixed(1)}%</div>
+        </div>
+      </div>
+      <div class="tw" style="margin-top:10px">
+      <table style="border-collapse:collapse;width:100%;font-size:12px">
+        <thead><tr style="background:var(--bg)">
+          <th style="padding:8px 14px;text-align:left;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">Cliente</th>
+          <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">${anoAnt}</th>
+          <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--acc);font-weight:700">${anoAct}</th>
+          <th style="padding:8px 14px;text-align:center;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">Var %</th>
+          <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);min-width:160px"></th>
+          <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);width:40px"></th>
+        </tr></thead>
+        <tbody>
+        ${cliRows.map((r,ri)=>{
+          const delta=r.ant>0?((r.act-r.ant)/r.ant*100):null;
+          const col=delta===null?'var(--mut)':delta>=0?'#065F46':'#A32D2D';
+          const bg =delta===null?'var(--bg)' :delta>=0?'#D1FAE5':'#FCEBEB';
+          const bAnt=r.ant>0?Math.round(r.ant/maxV*70):0;
+          const bAct=r.act>0?Math.round(r.act/maxV*70):0;
+          return`<tr style="background:${ri%2===0?'transparent':'var(--bg)'}">
+            <td style="padding:7px 14px;font-weight:700">${r.nombre}</td>
+            <td style="padding:7px 14px;text-align:right;color:var(--mut)">${r.ant>0?'€'+Math.round(r.ant).toLocaleString('es-ES'):'—'}</td>
+            <td style="padding:7px 14px;text-align:right;font-weight:700;color:var(--acc)">${r.act>0?'€'+Math.round(r.act).toLocaleString('es-ES'):'—'}</td>
+            <td style="padding:7px 14px;text-align:center">
+              ${delta===null?'<span style="font-size:11px;color:var(--mut)">nuevo</span>':`<span style="font-size:11px;font-weight:700;background:${bg};color:${col};padding:2px 8px;border-radius:99px">${delta>=0?'+':''}${delta.toFixed(1)}%</span>`}
+            </td>
+            <td style="padding:7px 14px">
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <div style="display:flex;align-items:center;gap:4px">
+                  <div style="width:8px;height:8px;border-radius:50%;background:#C4D9F0;flex-shrink:0"></div>
+                  <div style="height:6px;border-radius:3px;background:#C4D9F0;width:${bAnt}px;min-width:${r.ant>0?2:0}px"></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <div style="width:8px;height:8px;border-radius:50%;background:var(--acc);flex-shrink:0"></div>
+                  <div style="height:6px;border-radius:3px;background:var(--acc);width:${bAct}px;min-width:${r.act>0?2:0}px"></div>
+                </div>
+              </div>
+            </td>
+            <td style="padding:4px 10px;white-space:nowrap">
+              <label title="Subir ventas ${anoAnt} para ${r.nombre}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border:1px solid var(--brd);border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;color:var(--mut);background:var(--sur)">
+                <i class="ti ti-file-upload" style="font-size:13px"></i>${anoAnt}
+                <input type="file" accept=".xlsx,.xls,.csv" style="display:none" data-cli="${r.nombre.replace(/"/g,'&quot;')}" onchange="handleAnoAntXLCliente(this.dataset.cli,this)">
+              </label>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+        <tfoot><tr style="background:var(--bg);border-top:2px solid var(--brd)">
+          <td style="padding:8px 14px;font-weight:700">TOTAL</td>
+          <td style="padding:8px 14px;text-align:right;font-weight:700;color:var(--mut)">€${Math.round(totAnt).toLocaleString('es-ES')}</td>
+          <td style="padding:8px 14px;text-align:right;font-weight:700;color:var(--acc)">€${Math.round(totAct).toLocaleString('es-ES')}</td>
+          <td style="padding:8px 14px;text-align:center"><span style="font-size:11px;font-weight:700;background:${totD>=0?'#D1FAE5':'#FCEBEB'};color:${totD>=0?'#065F46':'#A32D2D'};padding:2px 8px;border-radius:99px">${totD>=0?'+':''}${totD.toFixed(1)}%</span></td>
+          <td></td>
+        </tr></tfoot>
+      </table></div>`;
+    return;
+  }
+
+  // Construir filas según modo
+  let filas=[], fromIdx=0, toIdx=11;
+  if(mode==='rango'){
+    fromIdx=parseInt(document.getElementById('dash-range-from')?.value||0);
+    toIdx  =parseInt(document.getElementById('dash-range-to')?.value||(mesActIdx>0?mesActIdx-1:0));
+    if(toIdx<fromIdx) toIdx=fromIdx;
+  }
+
+  if(mode==='mesmes'){
+    MESES.forEach((m,i)=>{
+      const ant=vMesAno(m,anoAnt), act=vMesAno(m,anoAct);
+      filas.push({label:m, idx:i, ant, act, esFuturo: i>mesActIdx});
+    });
+  } else if(mode==='acumulado'){
+    // Último mes con ventas reales (año actual)
+    let ultimoMesConVentas=0;
+    MESES.forEach((m,i)=>{ if(vMesAno(m,anoAct)>0) ultimoMesConVentas=i; });
+    let sumAnt=0, sumAct=0;
+    for(let i=0;i<=ultimoMesConVentas;i++){
+      const m=MESES[i];
+      sumAnt+=vMesAno(m,anoAnt); sumAct+=vMesAno(m,anoAct);
+      filas.push({label:i===0?'Ene':`Ene–${m}`, idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
+    }
+  } else if(mode==='rango'){
+    let sumAnt=0, sumAct=0;
+    for(let i=fromIdx;i<=toIdx;i++){
+      sumAnt+=vMesAno(MESES[i],anoAnt); sumAct+=vMesAno(MESES[i],anoAct);
+      filas.push({label:MESES[i], idx:i, ant:sumAnt, act:sumAct, esFuturo: i>mesActIdx});
+    }
+  }
+
+  const maxVal=Math.max(...filas.flatMap(f=>[f.ant,f.act]),1);
+  const totAnt=filas.reduce((a,f)=>a+(f.esFuturo?0:f.ant),0);
+  const totAct=filas.reduce((a,f)=>a+(f.esFuturo?0:f.act),0);
+  const totDelta=totAnt>0?((totAct-totAnt)/totAnt*100):0;
+
+  // KPIs resumen arriba
+  const kpiFmt=v=>v>=1000000?'€'+(v/1000000).toFixed(2)+'M':v>=1000?'€'+Math.round(v/1000)+'k':'€'+Math.round(v).toLocaleString('es-ES');
+  const deltaChip=(a,b)=>{
+    if(a===0) return `<span style="font-size:11px;color:var(--mut)">—</span>`;
+    const d=(b-a)/a*100;
+    const col=d>=0?'#065F46':'#A32D2D', bg=d>=0?'#D1FAE5':'#FCEBEB';
+    return `<span style="font-size:11px;font-weight:700;background:${bg};color:${col};padding:2px 8px;border-radius:99px">${d>=0?'+':''}${d.toFixed(1)}%</span>`;
+  };
+
+  el.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px 16px 0">
+      <div style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px 14px">
+        <div style="font-size:11px;color:var(--mut);margin-bottom:4px"><i class="ti ti-calendar"></i> ${anoAnt}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--mut)">${kpiFmt(totAnt)}</div>
+      </div>
+      <div style="background:#EEF5FC;border:1px solid #A8C4EF;border-radius:8px;padding:10px 14px">
+        <div style="font-size:11px;color:var(--acc);margin-bottom:4px"><i class="ti ti-calendar"></i> ${anoAct}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--acc)">${kpiFmt(totAct)}</div>
+      </div>
+      <div style="background:${totDelta>=0?'#D1FAE5':'#FCEBEB'};border:1px solid ${totDelta>=0?'#6EE7B7':'#FCA5A5'};border-radius:8px;padding:10px 14px">
+        <div style="font-size:11px;color:${totDelta>=0?'#065F46':'#A32D2D'};margin-bottom:4px"><i class="ti ti-trending-${totDelta>=0?'up':'down'}"></i> Variación</div>
+        <div style="font-size:18px;font-weight:700;color:${totDelta>=0?'#065F46':'#A32D2D'}">${totDelta>=0?'+':''}${totDelta.toFixed(1)}%</div>
+      </div>
+    </div>
+    <div class="tw" style="margin-top:10px">
+    <table style="border-collapse:collapse;width:100%;font-size:12px">
+      <thead><tr style="background:var(--bg)">
+        <th style="padding:8px 14px;text-align:left;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">Período</th>
+        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">${anoAnt}</th>
+        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--acc);font-weight:700">${anoAct}</th>
+        <th style="padding:8px 14px;text-align:center;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">Var %</th>
+        <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);min-width:160px"></th>
+      </tr></thead>
+      <tbody>
+      ${filas.map((f,ri)=>{
+        const delta=f.ant>0?((f.act-f.ant)/f.ant*100):null;
+        const colD=delta===null?'var(--mut)':delta>=0?'#065F46':'#A32D2D';
+        const bgD =delta===null?'var(--bg)' :delta>=0?'#D1FAE5':'#FCEBEB';
+        const barAnt=f.ant>0?Math.round(f.ant/maxVal*70):0;
+        const barAct=f.act>0?Math.round(f.act/maxVal*70):0;
+        const isCur=f.idx===mesActIdx-1 && !f.esFuturo && mode==='mesmes';
+        return `<tr style="background:${isCur?'#F0F7FF':ri%2===0?'transparent':'var(--bg)'}${f.esFuturo?';opacity:.45':''}">
+          <td style="padding:7px 14px;font-weight:${isCur?'700':'500'};color:${isCur?'var(--acc)':'var(--txt)'}">
+            ${f.label}${isCur?` <span style="font-size:10px;background:#EEF5FC;color:var(--acc);padding:1px 7px;border-radius:10px">anterior</span>`:''}
+            ${f.esFuturo?` <span style="font-size:10px;color:var(--mut);font-style:italic">sin datos</span>`:''}
+          </td>
+          <td style="padding:7px 14px;text-align:right;color:var(--mut)">${f.ant>0?'€'+Math.round(f.ant).toLocaleString('es-ES'):'—'}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:${f.esFuturo?'var(--mut)':'var(--acc)'}">${f.act>0?'€'+Math.round(f.act).toLocaleString('es-ES'):'—'}</td>
+          <td style="padding:7px 14px;text-align:center">
+            ${f.esFuturo||delta===null?'<span style="font-size:11px;color:var(--mut)">—</span>':`<span style="font-size:11px;font-weight:700;background:${bgD};color:${colD};padding:2px 8px;border-radius:99px">${delta>=0?'+':''}${delta.toFixed(1)}%</span>`}
+          </td>
+          <td style="padding:7px 14px">
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:4px">
+                <div style="width:8px;height:8px;border-radius:50%;background:#C4D9F0;flex-shrink:0"></div>
+                <div style="height:6px;border-radius:3px;background:#C4D9F0;width:${barAnt}px;min-width:${f.ant>0?2:0}px"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4px">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--acc);flex-shrink:0"></div>
+                <div style="height:6px;border-radius:3px;background:var(--acc);width:${barAct}px;min-width:${f.act>0?2:0}px"></div>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+      <tfoot><tr style="background:var(--bg);border-top:2px solid var(--brd)">
+        <td style="padding:8px 14px;font-weight:700;font-size:12px">TOTAL</td>
+        <td style="padding:8px 14px;text-align:right;font-weight:700;color:var(--mut)">€${Math.round(totAnt).toLocaleString('es-ES')}</td>
+        <td style="padding:8px 14px;text-align:right;font-weight:700;color:var(--acc)">€${Math.round(totAct).toLocaleString('es-ES')}</td>
+        <td style="padding:8px 14px;text-align:center">${deltaChip(totAnt,totAct)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table></div>`;
+}
+
+// ── IMPORTAR AÑO ANTERIOR DESDE EXCEL ──
+let _anoAntData=[];
+function handleAnoAntXL(input){
+  const file=input.files[0]; if(!file)return;
+  const anoAnt=new Date().getFullYear()-1;
+  const status=document.getElementById('dash-ant-status');
+  status.style.display='block';
+  status.innerHTML='<span style="color:var(--mut)">⏳ Cargando...</span>';
+  ensureXLSX().then(()=>{
+    const reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const rawRows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        let hdrIdx=0;
+        for(let i=0;i<Math.min(10,rawRows.length);i++){
+          const r=rawRows[i].map(c=>String(c||'').toUpperCase().trim());
+          if(r.some(c=>['CLIENTE','EMPRESA','MES','MONTH'].includes(c))){hdrIdx=i;break;}
+        }
+        const hdrs=rawRows[hdrIdx].map(c=>String(c||'').trim().toUpperCase());
+        const dataRows=rawRows.slice(hdrIdx+1);
+        const MMAP={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic',ene:'Ene',feb:'Feb',mar:'Mar',abr:'Abr',may:'May',jun:'Jun',jul:'Jul',ago:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dic:'Dic','1':'Ene','2':'Feb','3':'Mar','4':'Abr','5':'May','6':'Jun','7':'Jul','8':'Ago','9':'Sep','10':'Oct','11':'Nov','12':'Dic','01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep'};
+        const gc=(row,keys)=>{for(const k of keys){const idx=hdrs.indexOf(k);if(idx>=0&&String(row[idx]||'').trim()!=='')return String(row[idx]).trim();}return '';};
+        const nH=s=>s.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+        const cliMap={};
+        DB.clientes.forEach(c=>{cliMap[nH(c.nombre)]=c;});
+        _anoAntData=[];
+        const noMatch=[];
+        dataRows.forEach((row)=>{
+          const rawCli=gc(row,['CLIENTE','EMPRESA','GRUPO','CLIENT']);
+          const rawMes=gc(row,['MES','MONTH','PERIODO']);
+          const rawDep=gc(row,['DEPARTAMENTO','DEPTO','DEPT','DPTO','SECCION','SECCIÓN']);
+          const rawImp=gc(row,['IMPORTE','VENTAS','IMPORTE (€)','AMOUNT','TOTAL','VENTA','SALES']);
+          const rawAno=gc(row,['AÑO','ANO','YEAR','EJERCICIO']);
+          if(!rawCli||!rawImp)return;
+          const imp=parseImporte(rawImp); if(!imp)return;
+          const mesLow=rawMes.toLowerCase().trim();
+          const mes=MMAP[mesLow]||MMAP[mesLow.slice(0,3)]||(MESES.includes(rawMes.slice(0,3))?rawMes.slice(0,3):null);
+          if(!mes)return;
+          const año=parseInt(rawAno)||anoAnt;
+          let cli=cliMap[nH(rawCli)];
+          if(!cli){const k=Object.keys(cliMap).find(k=>k.includes(nH(rawCli))||nH(rawCli).includes(k));if(k)cli=cliMap[k];}
+          if(!cli){noMatch.push(rawCli);return;}
+          _anoAntData.push({cliId:cli.id,cliente:cli.nombre,mes,año,importe:imp,departamento:rawDep});
+        });
+        if(!_anoAntData.length){status.innerHTML=`<div style="color:var(--red);font-size:12px">⚠ Sin filas válidas. Columnas esperadas: CLIENTE · MES · IMPORTE (opcionales: DEPARTAMENTO · AÑO)</div>`;return;}
+        const byMes={};
+        _anoAntData.forEach(r=>{byMes[r.mes]=(byMes[r.mes]||0)+r.importe;});
+        const resumen=Object.entries(byMes).sort((a,b)=>MESES.indexOf(a[0])-MESES.indexOf(b[0])).map(([m,v])=>`${m}: €${Math.round(v).toLocaleString('es-ES')}`).join(' · ');
+        status.innerHTML=`<div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:10px 14px;font-size:12px">
+          <div style="font-weight:700;color:#059669;margin-bottom:4px">✓ ${_anoAntData.length} filas — ${[...new Set(_anoAntData.map(r=>r.cliente))].length} clientes</div>
+          <div style="color:var(--mut);margin-bottom:8px">${resumen}</div>
+          ${noMatch.length?`<div style="color:var(--amb);margin-bottom:8px">⚠ Sin coincidencia: ${[...new Set(noMatch)].slice(0,5).join(', ')}${noMatch.length>5?'…':''}</div>`:''}
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-green btn-sm" onclick="importAnoAntXL()"><i class="ti ti-download"></i>Guardar ${_anoAntData.length} registros en ${anoAnt}</button>
+            <button class="btn btn-sm" onclick="document.getElementById('dash-ant-status').style.display='none';document.getElementById('dash-ant-xl').value=''">Cancelar</button>
+          </div>
+        </div>`;
+      }catch(err){status.innerHTML=`<div style="color:var(--red);font-size:12px">⚠ Error: ${err.message}</div>`;}
+    };
+    reader.readAsArrayBuffer(file);
+  }).catch(err=>{status.innerHTML=`<div style="color:var(--red);font-size:12px">⚠ ${err.message}</div>`;});
+}
+async function importAnoAntXL(){
+  const anoAnt=new Date().getFullYear()-1;
+  _anoAntData.forEach(r=>{
+    const c=DB.clientes.find(x=>x.id===r.cliId); if(!c)return;
+    if(!c.ventas)c.ventas=[];
+    if(r.departamento){
+      if(!c.ventas_dep)c.ventas_dep={};
+      if(!c.ventas_dep[r.departamento])c.ventas_dep[r.departamento]={};
+      c.ventas_dep[r.departamento][r.mes]=(c.ventas_dep[r.departamento][r.mes]||0)+r.importe;
+    }
+    const idx=c.ventas.findIndex(v=>v.mes===r.mes&&(v.año||anoAnt)===r.año);
+    if(idx>=0)c.ventas[idx].importe+=r.importe;
+    else c.ventas.push({mes:r.mes,año:r.año,importe:r.importe,unidades:0,descripcion:''});
+  });
+  await save();
+  toast(`✓ ${_anoAntData.length} registros de ${anoAnt} guardados`);
+  document.getElementById('dash-ant-status').style.display='none';
+  document.getElementById('dash-ant-xl').value='';
+  _anoAntData=[];
+  dashRenderComp();
+}
+
+function handleAnoAntXLCliente(cliNombre, input){
+  const file=input.files[0]; if(!file)return;
+  const c=DB.clientes.find(x=>x.nombre===cliNombre);
+  if(!c){toast('⚠ Cliente no encontrado: '+cliNombre);return;}
+  const anoAnt=new Date().getFullYear()-1;
+  const MMAP={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic',ene:'Ene',feb:'Feb',mar:'Mar',abr:'Abr',may:'May',jun:'Jun',jul:'Jul',ago:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dic:'Dic',jan:'Ene',feb:'Feb',mar:'Mar',apr:'Abr',jun:'Jun',jul:'Jul',aug:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dec:'Dic','1':'Ene','2':'Feb','3':'Mar','4':'Abr','5':'May','6':'Jun','7':'Jul','8':'Ago','9':'Sep','10':'Oct','11':'Nov','12':'Dic','01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep'};
+  ensureXLSX().then(()=>{
+    const reader=new FileReader();
+    reader.onload=async function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        if(!rows.length){toast('⚠ Archivo vacío');return;}
+        const parsed=[];
+        rows.forEach((r,i)=>{
+          // Saltar fila de cabecera si contiene texto en col 0
+          const col0=String(r[0]||'').trim().toLowerCase();
+          const mesKey=MMAP[col0]||MMAP[col0.slice(0,3)];
+          if(!mesKey) return; // fila sin mes válido (cabecera o vacía)
+          // Formato: MES | AÑO | IMPORTE | UNIDADES  o  MES | IMPORTE
+          let año=anoAnt, imp=0, dep='';
+          const v1=String(r[1]||'').replace(/[^0-9.,\-]/g,'');
+          const v2=String(r[2]||'').replace(/[^0-9.,\-]/g,'');
+          if(v1.length===4&&parseInt(v1)>2000){
+            // col1 es año
+            año=parseInt(v1);
+            imp=parseImporte(String(r[2]||''));
+            dep=String(r[4]||'').trim();
+          } else {
+            // col1 es importe
+            imp=parseImporte(String(r[1]||''));
+            dep=String(r[3]||'').trim();
+          }
+          if(!imp) return;
+          parsed.push({mes:mesKey, año, imp, dep});
+        });
+        if(!parsed.length){toast('⚠ Sin filas válidas. Formato: MES | AÑO | IMPORTE (o MES | IMPORTE)');input.value='';return;}
+        if(!c.ventas)c.ventas=[];
+        parsed.forEach(({mes,año,imp,dep})=>{
+          if(dep){
+            if(!c.ventas_dep)c.ventas_dep={};
+            if(!c.ventas_dep[dep])c.ventas_dep[dep]={};
+            c.ventas_dep[dep][mes]=(c.ventas_dep[dep][mes]||0)+imp;
+          }
+          const idx=c.ventas.findIndex(v=>v.mes===mes&&(v.año||anoAnt)===año);
+          if(idx>=0)c.ventas[idx].importe+=imp;
+          else c.ventas.push({mes,año,importe:imp,unidades:0,descripcion:''});
+        });
+        await save();
+        input.value='';
+        toast(`✓ ${c.nombre}: ${parsed.length} registros guardados en ${anoAnt}`);
+        dashRenderComp();
+      }catch(err){toast('⚠ Error: '+err.message);console.error(err);}
+    };
+    reader.readAsArrayBuffer(file);
+  }).catch(err=>toast('⚠ Error cargando Excel: '+err.message));
 }
 
 // ══════════════════════════════════════════════════════
