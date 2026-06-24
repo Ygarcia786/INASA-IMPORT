@@ -344,10 +344,17 @@ async function loadDB() {
     const r = await window.storage.get(KEY, true);
     if (r) {
       const parsed = JSON.parse(r.value);
-      // Merge: keep base clients structure, overlay saved data
       DB = parsed;
     }
   } catch(e) { /* keep initDB() */ }
+  // Migración: estampar año en ventas sin año o con año=0
+  // Las ventas sin año se asignan al año actual (fueron creadas antes de que existiera el campo)
+  const anoActual = new Date().getFullYear();
+  (DB.clientes||[]).forEach(c=>{
+    (c.ventas||[]).forEach(v=>{
+      if(!v.año || v.año===0) v.año = anoActual;
+    });
+  });
 }
 
 async function exportData() {
@@ -483,7 +490,7 @@ function renderDashboard() {
 
   // ventas por año/mes
   const vPorAnoMes = (ano, mes) => DB.clientes.reduce((a,c)=>
-    a + c.ventas.filter(v=>v.mes===mes&&(v.año||anoAct)===ano).reduce((s,v)=>s+(v.importe||0),0), 0);
+    a + c.ventas.filter(v=>v.mes===mes&&v.año===ano).reduce((s,v)=>s+(v.importe||0),0), 0);
 
   const ventasMesAnt = vPorAnoMes(anoAct, mesAnt);
 
@@ -559,8 +566,8 @@ function renderDashboard() {
       <div style="padding:12px 16px 14px">
       ${(()=>{
         const cliComp = DB.clientes.map(c=>{
-          const ant=c.ventas.filter(v=>(v.año||anoAct)===anoAnt).reduce((a,v)=>a+(v.importe||0),0);
-          const act=c.ventas.filter(v=>(v.año||anoAct)===anoAct).reduce((a,v)=>a+(v.importe||0),0);
+          const ant=c.ventas.filter(v=>v.año===anoAnt).reduce((a,v)=>a+(v.importe||0),0);
+          const act=c.ventas.filter(v=>v.año===anoAct).reduce((a,v)=>a+(v.importe||0),0);
           return {n:c.nombre, ant, act, tot:act||ant};
         }).filter(c=>c.tot>0).sort((a,b)=>b.tot-a.tot).slice(0,7);
         if(!cliComp.length) return '<div class="nodata">Sin ventas</div>';
@@ -642,7 +649,7 @@ function renderHistoricoTable(){
   const anos=[...anosSet].sort();
 
   const fmt=v=>v>0?'€'+Math.round(v).toLocaleString('es-ES'):'—';
-  const vCliAno=(c,a)=>c.ventas.filter(v=>(v.año||anoAct)===a).reduce((s,v)=>s+(v.importe||0),0);
+  const vCliAno=(c,a)=>c.ventas.filter(v=>v.año===a).reduce((s,v)=>s+(v.importe||0),0);
 
   el.innerHTML=`
     <div class="tw" style="overflow-x:auto">
@@ -773,8 +780,11 @@ function handleHistoricoXL(input){
         // Guardar en ventas_dep y ventas
         if(!c.ventas)c.ventas=[];
         if(!c.ventas_dep)c.ventas_dep={};
-        // Limpiar datos anteriores del mismo año para este cliente (reemplazar)
-        c.ventas=c.ventas.filter(v=>(v.año||anoSel)!==anoSel);
+        // Estampar año actual en ventas sin año (para no perderlas en futuros filtros)
+        const anoActual=new Date().getFullYear();
+        c.ventas.forEach(v=>{ if(!v.año) v.año=anoActual; });
+        // Limpiar datos del mismo año para este cliente (solo los que tienen año explícito)
+        c.ventas=c.ventas.filter(v=>v.año!==anoSel);
 
         const mesTotal={};
         parsed.forEach(({dep,mes,año,imp})=>{
@@ -826,13 +836,13 @@ function dashRenderComp(){
   const mesActIdx=now.getMonth();
 
   const vMesAno=(mes,ano)=>DB.clientes.reduce((a,c)=>
-    a+c.ventas.filter(v=>v.mes===mes&&(v.año||anoAct)===ano).reduce((s,v)=>s+(v.importe||0),0),0);
+    a+c.ventas.filter(v=>v.mes===mes&&v.año===ano).reduce((s,v)=>s+(v.importe||0),0),0);
 
   // ── MODO CLIENTES ──
   if(mode==='clientes'){
     const cliRows=DB.clientes.map(c=>{
-      const ant=c.ventas.filter(v=>(v.año||anoAct)===anoAnt).reduce((a,v)=>a+(v.importe||0),0);
-      const act=c.ventas.filter(v=>(v.año||anoAct)===anoAct).reduce((a,v)=>a+(v.importe||0),0);
+      const ant=c.ventas.filter(v=>v.año===anoAnt).reduce((a,v)=>a+(v.importe||0),0);
+      const act=c.ventas.filter(v=>v.año===anoAct).reduce((a,v)=>a+(v.importe||0),0);
       return {nombre:c.nombre, ant, act};
     }).filter(r=>r.ant>0||r.act>0).sort((a,b)=>b.act-a.act||b.ant-a.ant);
     const maxV=Math.max(...cliRows.flatMap(r=>[r.ant,r.act]),1);
@@ -1096,7 +1106,7 @@ async function importAnoAntXL(){
       if(!c.ventas_dep[r.departamento])c.ventas_dep[r.departamento]={};
       c.ventas_dep[r.departamento][r.mes]=(c.ventas_dep[r.departamento][r.mes]||0)+r.importe;
     }
-    const idx=c.ventas.findIndex(v=>v.mes===r.mes&&(v.año||anoAnt)===r.año);
+    const idx=c.ventas.findIndex(v=>v.mes===r.mes&&v.año===r.año);
     if(idx>=0)c.ventas[idx].importe+=r.importe;
     else c.ventas.push({mes:r.mes,año:r.año,importe:r.importe,unidades:0,descripcion:''});
   });
@@ -1152,7 +1162,7 @@ function handleAnoAntXLCliente(cliNombre, input){
             if(!c.ventas_dep[dep])c.ventas_dep[dep]={};
             c.ventas_dep[dep][mes]=(c.ventas_dep[dep][mes]||0)+imp;
           }
-          const idx=c.ventas.findIndex(v=>v.mes===mes&&(v.año||anoAnt)===año);
+          const idx=c.ventas.findIndex(v=>v.mes===mes&&v.año===año);
           if(idx>=0)c.ventas[idx].importe+=imp;
           else c.ventas.push({mes,año,importe:imp,unidades:0,descripcion:''});
         });
