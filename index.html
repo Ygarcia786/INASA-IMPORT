@@ -501,7 +501,22 @@ function renderDashboard() {
 
   document.getElementById('content').innerHTML = `
     <div class="ph"><div class="pt"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
-      <span style="font-size:12px;color:var(--mut)">${now.toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</span></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-sm" onclick="toggleHistorico()" id="btn-historico" style="font-weight:700"><i class="ti ti-database"></i>Histórico de ventas</button>
+        <span style="font-size:12px;color:var(--mut)">${now.toLocaleDateString('es-ES',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</span>
+      </div>
+    </div>
+
+    <!-- ── HISTÓRICO DE VENTAS ── -->
+    <div id="dash-historico" style="display:none;margin-bottom:14px">
+      <div class="card">
+        <div class="ch" style="flex-wrap:wrap;gap:8px">
+          <div class="ct"><i class="ti ti-database"></i>Histórico de ventas por cliente</div>
+          <div style="font-size:11px;color:var(--mut)">Sube el Excel mensual de cada cliente y año para construir la base histórica</div>
+        </div>
+        <div id="dash-hist-table"></div>
+      </div>
+    </div>
 
     <div class="kgrid" style="grid-template-columns:repeat(3,1fr)">
       <div class="kcard"><div class="kl"><i class="ti ti-cash"></i> Ventas totales</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div><div class="ks">Todo el histórico</div></div>
@@ -604,6 +619,153 @@ function renderDashboard() {
     </div>`;
 
   dashSetMode(localStorage.getItem('dash_comp_mode')||'mesmes', true);
+}
+
+function toggleHistorico(){
+  const el=document.getElementById('dash-historico');
+  const btn=document.getElementById('btn-historico');
+  if(!el) return;
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  btn.style.background=open?'var(--acc)':'var(--sur)';
+  btn.style.color=open?'#fff':'var(--txt)';
+  if(open) renderHistoricoTable();
+}
+
+function renderHistoricoTable(){
+  const el=document.getElementById('dash-hist-table'); if(!el) return;
+  const now=new Date();
+  const anoAct=now.getFullYear();
+  // Años con datos + año actual + anterior
+  const anosSet=new Set([anoAct-2, anoAct-1, anoAct]);
+  DB.clientes.forEach(c=>(c.ventas||[]).forEach(v=>{ if(v.año) anosSet.add(v.año); }));
+  const anos=[...anosSet].sort();
+
+  const fmt=v=>v>0?'€'+Math.round(v).toLocaleString('es-ES'):'—';
+  const vCliAno=(c,a)=>c.ventas.filter(v=>(v.año||anoAct)===a).reduce((s,v)=>s+(v.importe||0),0);
+
+  el.innerHTML=`
+    <div class="tw" style="overflow-x:auto">
+    <table style="border-collapse:collapse;width:100%;font-size:12px">
+      <thead><tr style="background:var(--bg)">
+        <th style="padding:8px 14px;text-align:left;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);position:sticky;left:0;background:var(--bg);z-index:2">Cliente</th>
+        ${anos.map(a=>`<th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:${a===anoAct?'var(--acc)':'var(--mut)'};font-weight:${a===anoAct?'700':'500'}">${a}</th>`).join('')}
+        <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);white-space:nowrap">Subir ventas</th>
+      </tr></thead>
+      <tbody>
+      ${DB.clientes.map((c,ri)=>{
+        const totales=anos.map(a=>vCliAno(c,a));
+        return`<tr style="background:${ri%2===0?'transparent':'var(--bg)'}">
+          <td style="padding:7px 14px;font-weight:700;position:sticky;left:0;background:${ri%2===0?'var(--sur,#fff)':'var(--bg)'};z-index:1">${c.nombre}</td>
+          ${totales.map((v,ai)=>{
+            const prev=ai>0?totales[ai-1]:null;
+            const delta=prev&&prev>0?((v-prev)/prev*100):null;
+            return`<td style="padding:7px 14px;text-align:right;color:${v>0?(anos[ai]===anoAct?'var(--acc)':'var(--txt)'):'var(--mut)'}">
+              ${fmt(v)}
+              ${delta!==null&&v>0?`<div style="font-size:9px;font-weight:700;color:${delta>=0?'#065F46':'#A32D2D'}">${delta>=0?'+':''}${delta.toFixed(0)}%</div>`:''}
+            </td>`;
+          }).join('')}
+          <td style="padding:6px 10px;white-space:nowrap">
+            <div style="display:flex;align-items:center;gap:6px">
+              <select id="hist-ano-${ri}" style="padding:3px 6px;border:1px solid var(--brd);border-radius:6px;font-size:11px;background:var(--sur);color:var(--txt)">
+                ${anos.map(a=>`<option value="${a}" ${a===anoAct-1?'selected':''}>${a}</option>`).join('')}
+              </select>
+              <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid var(--brd);border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;color:var(--mut);background:var(--sur);white-space:nowrap">
+                <i class="ti ti-file-upload" style="font-size:12px"></i>Excel
+                <input type="file" accept=".xlsx,.xls,.csv" style="display:none"
+                  data-cli="${c.nombre.replace(/"/g,'&quot;')}"
+                  data-rowid="${ri}"
+                  onchange="handleHistoricoXL(this)">
+              </label>
+            </div>
+            <div id="hist-status-${ri}" style="font-size:10px;color:var(--mut);margin-top:3px"></div>
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+      <tfoot><tr style="background:var(--bg);border-top:2px solid var(--brd)">
+        <td style="padding:8px 14px;font-weight:700;font-size:11px;position:sticky;left:0;background:var(--bg)">TOTAL</td>
+        ${anos.map(a=>{
+          const tot=DB.clientes.reduce((s,c)=>s+vCliAno(c,a),0);
+          return`<td style="padding:8px 14px;text-align:right;font-weight:700;color:${a===anoAct?'var(--acc)':'var(--txt)'}">${fmt(tot)}</td>`;
+        }).join('')}
+        <td></td>
+      </tr></tfoot>
+    </table></div>
+    <div style="font-size:11px;color:var(--mut);padding:8px 14px">
+      <i class="ti ti-info-circle"></i> Formato Excel: <strong>MES · IMPORTE</strong> (una fila por mes, sin cabecera obligatoria) · Opcional: <strong>AÑO · DEPARTAMENTO</strong>
+    </div>`;
+}
+
+function handleHistoricoXL(input){
+  const file=input.files[0]; if(!file)return;
+  const cliNombre=input.dataset.cli;
+  const rowId=input.dataset.rowid;
+  const anoSel=parseInt(document.getElementById('hist-ano-'+rowId)?.value)||new Date().getFullYear()-1;
+  const status=document.getElementById('hist-status-'+rowId);
+  const c=DB.clientes.find(x=>x.nombre===cliNombre);
+  if(!c){if(status)status.textContent='⚠ Cliente no encontrado';return;}
+
+  if(status) status.innerHTML='⏳ Leyendo...';
+  const MMAP={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic',ene:'Ene',feb:'Feb',mar:'Mar',abr:'Abr',may:'May',jun:'Jun',jul:'Jul',ago:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dic:'Dic',jan:'Ene',apr:'Abr',aug:'Ago',dec:'Dic','1':'Ene','2':'Feb','3':'Mar','4':'Abr','5':'May','6':'Jun','7':'Jul','8':'Ago','9':'Sep','10':'Oct','11':'Nov','12':'Dic','01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep'};
+
+  ensureXLSX().then(()=>{
+    const reader=new FileReader();
+    reader.onload=async function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        if(!rows.length){if(status)status.textContent='⚠ Archivo vacío';return;}
+
+        const parsed=[];
+        rows.forEach(r=>{
+          const col0=String(r[0]||'').trim().toLowerCase();
+          const mesKey=MMAP[col0]||MMAP[col0.slice(0,3)];
+          if(!mesKey) return;
+          // Detectar si col1 es año (4 dígitos) o importe
+          const v1=String(r[1]||'').replace(/[^0-9]/g,'');
+          let año=anoSel, imp=0, dep='';
+          if(v1.length===4&&parseInt(v1)>2000){
+            año=parseInt(v1);
+            imp=parseImporte(String(r[2]||''));
+            dep=String(r[4]||'').trim();
+          } else {
+            imp=parseImporte(String(r[1]||''));
+            dep=String(r[3]||'').trim();
+          }
+          if(!imp) return;
+          parsed.push({mes:mesKey, año, imp, dep});
+        });
+
+        if(!parsed.length){
+          if(status)status.textContent='⚠ Sin datos. Formato: MES | IMPORTE';
+          input.value=''; return;
+        }
+
+        if(!c.ventas)c.ventas=[];
+        parsed.forEach(({mes,año,imp,dep})=>{
+          if(dep){
+            if(!c.ventas_dep)c.ventas_dep={};
+            if(!c.ventas_dep[dep])c.ventas_dep[dep]={};
+            c.ventas_dep[dep][mes]=(c.ventas_dep[dep][mes]||0)+imp;
+          }
+          const idx=c.ventas.findIndex(v=>v.mes===mes&&(v.año||anoSel)===año);
+          if(idx>=0)c.ventas[idx].importe+=imp;
+          else c.ventas.push({mes,año,importe:imp,unidades:0,descripcion:''});
+        });
+
+        await save();
+        input.value='';
+        if(status) status.innerHTML=`<span style="color:#059669">✓ ${parsed.length} meses · ${año===anoSel?anoSel:parsed[0].año}</span>`;
+        renderHistoricoTable();
+        dashRenderComp();
+      }catch(err){
+        if(status)status.textContent='⚠ Error: '+err.message;
+        console.error(err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }).catch(err=>{if(status)status.textContent='⚠ '+err.message;});
 }
 
 function dashSetMode(mode, init){
@@ -1664,7 +1826,7 @@ async function saveOportunidades(){
   try{ await window.storage.set(OPORT_KEY,JSON.stringify(DB_OPORTUNIDADES),true); }catch(e){}
 }
 
-let oportCols = {fabricante:true,aportacion:true,listing:true,comprador:true,surtido:true,notas_surtido:true,estado:true,fecha_cierre:true};
+let oportCols = {fabricante:true,aportacion:true,cliente_oport:true,comprador:true,surtido:true,notas_surtido:true,estado:true,fecha_cierre:true};
 
 function renderOportunidades(){
   const total=DB_OPORTUNIDADES.reduce((a,o)=>a+(parseFloat(o.aportacion)||0),0);
@@ -1680,7 +1842,7 @@ function renderOportunidades(){
     <div id="oport-col-picker" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:10px;padding:12px 16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Columnas visibles</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['listing','Listing'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']].map(([k,l])=>
+        ${[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente_oport','Cliente'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']].map(([k,l])=>
           `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;font-weight:600">
             <input type="checkbox" ${oportCols[k]?'checked':''} onchange="oportCols['${k}']=this.checked;renderOportTable()">
             ${l}</label>`).join('')}
@@ -1707,7 +1869,7 @@ function renderOportTable(){
   const tbody=document.getElementById('oport-tbody');
   const empty=document.getElementById('oport-empty');
   const sm={Propuesta:'tw-hot',Negociación:'tw-warm',Ganado:'tw-won',Perdido:'tw-lost','Cliente Potencial':'tw-cold',Prospecto:'tw-cold'};
-  const colDefs=[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['listing','Listing'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']];
+  const colDefs=[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente_oport','Cliente'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']];
   if(thead)thead.innerHTML=colDefs.filter(([k])=>oportCols[k]).map(([,l])=>`<th>${l}</th>`).join('')+'<th></th>';
   if(!DB_OPORTUNIDADES.length){if(tbody)tbody.innerHTML='';if(empty)empty.style.display='block';return;}
   if(empty)empty.style.display='none';
@@ -1715,7 +1877,7 @@ function renderOportTable(){
     const cells=[];
     if(oportCols.fabricante)cells.push(`<td><strong>${o.fabricante||''}</strong></td>`);
     if(oportCols.aportacion)cells.push(`<td style="color:var(--grn);font-weight:700">${o.aportacion?'€'+parseFloat(o.aportacion).toLocaleString():'—'}</td>`);
-    if(oportCols.listing)cells.push(`<td><span style="background:#EDE9FE;color:#5B21B6;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:700">${o.listing||'—'}</span></td>`);
+    if(oportCols.listing)cells.push(`<td><span style="background:#EDE9FE;color:#5B21B6;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:700">${o.cliente_oport||'—'}</span></td>`);
     if(oportCols.comprador)cells.push(`<td style="color:var(--mut)">${o.comprador||'—'}</td>`);
     if(oportCols.surtido)cells.push(`<td style="font-size:11.5px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.surtido||''}">${o.surtido||'—'}</td>`);
     if(oportCols.notas_surtido)cells.push(`<td style="font-size:11px;color:var(--mut);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.notas_surtido||''}">${o.notas_surtido||'—'}</td>`);
@@ -1738,7 +1900,7 @@ function openOportunidadModal(id){
       <div class="fg"><div class="fl">Aportación del fabricante (€)</div><input class="fi" id="m-aportacion" type="number" value="${o.aportacion||''}"></div>
     </div>
     <div class="fr">
-      <div class="fg"><div class="fl">Listing</div><input class="fi" id="m-listing" value="${o.listing||''}" placeholder="Tipo de listing"></div>
+      <div class="fg"><div class="fl">Listing</div><input class="fi" id="m-cliente-oport" value="${o.listing||''}" placeholder="Nombre del cliente"></div>
       <div class="fg"><div class="fl">Comprador</div><input class="fi" id="m-comprador" value="${o.comprador||''}" placeholder="Nombre del comprador"></div>
     </div>
     <div class="fg"><div class="fl">Surtido</div><input class="fi" id="m-surtido" value="${o.surtido||''}" placeholder="Descripción del surtido"></div>
@@ -1757,7 +1919,7 @@ function editOportunidad(id){openOportunidadModal(id);}
 async function saveOportunidad(){
   const fab=document.getElementById('m-fabricante')?.value?.trim();if(!fab){toast('⚠ Indica el fabricante');return;}
   const id=parseInt(document.getElementById('m-id')?.value||'');
-  const obj={fabricante:fab,aportacion:parseFloat(document.getElementById('m-aportacion')?.value)||0,listing:document.getElementById('m-listing')?.value||'',comprador:document.getElementById('m-comprador')?.value||'',surtido:document.getElementById('m-surtido')?.value||'',notas_surtido:document.getElementById('m-notas-surtido')?.value||'',estado:document.getElementById('m-estado-oport')?.value||'Cliente Potencial',fecha_cierre:document.getElementById('m-fecha-cierre')?.value||''};
+  const obj={fabricante:fab,aportacion:parseFloat(document.getElementById('m-aportacion')?.value)||0,cliente_oport:document.getElementById('m-cliente-oport')?.value||'',comprador:document.getElementById('m-comprador')?.value||'',surtido:document.getElementById('m-surtido')?.value||'',notas_surtido:document.getElementById('m-notas-surtido')?.value||'',estado:document.getElementById('m-estado-oport')?.value||'Cliente Potencial',fecha_cierre:document.getElementById('m-fecha-cierre')?.value||''};
   if(id){const o=DB_OPORTUNIDADES.find(x=>x._id===id);if(o)Object.assign(o,obj);}
   else{obj._id=nextId(DB_OPORTUNIDADES);DB_OPORTUNIDADES.push(obj);}
   await saveOportunidades();writeActivity("oportunidades");toast('✓ Oportunidad guardada');closeModal();renderOportunidades();
@@ -2464,21 +2626,216 @@ async function toggleT(id){
 // ══════════════════════════════════════════════════════
 function renderSeguimiento(){
   const imap={Llamada:'ti-phone',Email:'ti-mail',Visita:'ti-map-pin','Reunión':'ti-users',WhatsApp:'ti-brand-whatsapp',Otro:'ti-dots'};
+  const now=new Date(); const hoy=now.toISOString().slice(0,10);
+
+  // Recordatorios: próxima acción cuyo día laborable anterior es hoy
+  const recordatorios=DB.seguimiento.filter(s=>{
+    if(!s.fecha_proxima) return false;
+    const d=new Date(s.fecha_proxima+'T00:00:00');
+    // Retroceder al día laborable anterior
+    do{ d.setDate(d.getDate()-1); }while(d.getDay()===0||d.getDay()===6);
+    return d.toISOString().slice(0,10)===hoy && s.responsable===currentUser?.name;
+  });
+
+  // Calendario: agrupar próximas acciones por fecha
+  const proxMap={};
+  DB.seguimiento.forEach(s=>{ if(s.fecha_proxima){ if(!proxMap[s.fecha_proxima])proxMap[s.fecha_proxima]=[]; proxMap[s.fecha_proxima].push(s); }});
+  const proxFechas=Object.keys(proxMap).filter(f=>f>=hoy).sort().slice(0,20);
+
+  // Mes del calendario
+  const calKey='seg_cal_mes';
+  let calMes=parseInt(localStorage.getItem(calKey+'_m')||now.getMonth());
+  let calAno=parseInt(localStorage.getItem(calKey+'_y')||now.getFullYear());
+
   document.getElementById('content').innerHTML=`
     <div class="ph"><div class="pt"><i class="ti ti-timeline"></i>Seguimiento</div>
-      <button class="btn btn-primary" onclick="openModal('seguimiento')"><i class="ti ti-plus"></i>Nuevo seguimiento</button></div>
-    <div class="card">${DB.seguimiento.length?[...DB.seguimiento].reverse().map(s=>`<div class="sitem">
-      <div class="sico ib"><i class="ti ${imap[s.tipo]||'ti-dots'}"></i></div>
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${s.cliente||''} <span style="font-weight:400;color:var(--mut)">· ${s.contacto||''}</span>
-          <span class="tag tw-warm" style="margin-left:auto">${s.tipo}</span>
-          <span style="font-size:11px;color:var(--mut)">${s.fecha||''}</span>
-        </div>
-        <div style="font-size:12px;color:var(--mut);margin-top:4px">${s.resultado||''}</div>
-        ${s.proxima?`<div style="font-size:11px;color:var(--acc);margin-top:3px"><i class="ti ti-arrow-right" style="font-size:11px"></i> ${s.proxima}</div>`:''}
+      <button class="btn btn-primary" onclick="openSeguimientoModal()"><i class="ti ti-plus"></i>Nuevo seguimiento</button></div>
+
+    ${recordatorios.length?`<div style="background:#FEF3C7;border:1.5px solid #FCD34D;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">
+      <i class="ti ti-bell" style="font-size:20px;color:#92400E;flex-shrink:0;margin-top:2px"></i>
+      <div>
+        <div style="font-weight:700;color:#92400E;margin-bottom:6px">🔔 Recordatorio — mañana tienes ${recordatorios.length} seguimiento${recordatorios.length>1?'s':''} programado${recordatorios.length>1?'s':''}</div>
+        ${recordatorios.map(s=>`<div style="font-size:12px;color:#78350F;margin-bottom:3px">
+          <strong>${s.cliente}</strong> · ${s.fecha_proxima} · ${s.notas_proxima||s.proxima||'Sin notas'}
+        </div>`).join('')}
       </div>
-    </div>`).join(''):'<div class="nodata">Sin registros de seguimiento</div>'}</div>`;
+    </div>`:''}
+
+    <div class="g2" style="margin-bottom:14px">
+      <!-- Calendario próximas acciones -->
+      <div class="card">
+        <div class="ch"><div class="ct"><i class="ti ti-calendar-check"></i>Próximas acciones</div>
+          <div style="display:flex;gap:4px;align-items:center">
+            <button class="bico" onclick="segCalNav(-1)"><i class="ti ti-chevron-left"></i></button>
+            <span id="seg-cal-label" style="font-size:12px;font-weight:700;min-width:100px;text-align:center"></span>
+            <button class="bico" onclick="segCalNav(1)"><i class="ti ti-chevron-right"></i></button>
+          </div>
+        </div>
+        <div id="seg-cal" style="padding:8px 12px"></div>
+      </div>
+      <!-- Panel próximas lista -->
+      <div class="card">
+        <div class="ch"><div class="ct"><i class="ti ti-list-check"></i>Agenda próxima</div></div>
+        <div style="padding:8px 12px;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
+          ${proxFechas.length?proxFechas.map(f=>{
+            const dias=Math.round((new Date(f)-new Date(hoy))/(86400000));
+            const color=dias===0?'var(--grn)':dias===1?'var(--amb)':'var(--acc)';
+            return proxMap[f].map(s=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 10px;border:1px solid var(--brd);border-radius:8px;cursor:pointer" onclick="openSeguimientoModal(${s._id})">
+              <div style="flex-shrink:0;text-align:center;min-width:40px">
+                <div style="font-size:17px;font-weight:700;color:${color};line-height:1">${new Date(f+'T00:00:00').getDate()}</div>
+                <div style="font-size:9px;color:var(--mut)">${['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][new Date(f+'T00:00:00').getDay()]}</div>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:700">${s.cliente}</div>
+                <div style="font-size:11px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.notas_proxima||s.proxima||'—'}</div>
+                <div style="font-size:10px;color:${color};font-weight:600">${dias===0?'Hoy':dias===1?'Mañana':'En '+dias+' días'}</div>
+              </div>
+              <span style="font-size:10px;color:var(--mut);flex-shrink:0">${s.responsable||''}</span>
+            </div>`).join('');
+          }).join(''):'<div class="nodata">Sin próximas acciones</div>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Lista de seguimientos -->
+    <div class="card">
+      <div class="ch"><div class="ct"><i class="ti ti-timeline"></i>Historial</div>
+        <span style="font-size:11px;color:var(--mut)">${DB.seguimiento.length} registros</span>
+      </div>
+      ${DB.seguimiento.length?[...DB.seguimiento].reverse().map(s=>`<div class="sitem">
+        <div class="sico ib"><i class="ti ${imap[s.tipo]||'ti-dots'}"></i></div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${s.cliente||''} <span style="font-weight:400;color:var(--mut)">· ${s.contacto||''}</span>
+            <span class="tag tw-warm" style="margin-left:auto">${s.tipo}</span>
+            <span style="font-size:11px;color:var(--mut)">${s.fecha||''}</span>
+          </div>
+          <div style="font-size:12px;color:var(--mut);margin-top:4px">${s.resultado||''}</div>
+          ${s.fecha_proxima?`<div style="font-size:11px;color:var(--acc);margin-top:3px"><i class="ti ti-arrow-right" style="font-size:11px"></i> <strong>${s.fecha_proxima}</strong>${s.notas_proxima?' — '+s.notas_proxima:''} ${s.responsable?'<span style="color:var(--mut)">· '+s.responsable+'</span>':''}</div>`:''}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="bico e" onclick="openSeguimientoModal(${s._id})" title="Editar"><i class="ti ti-pencil"></i></button>
+          <button class="bico d" onclick="confirmDel('seg',${s._id},'seguimiento de ${(s.cliente||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>`).join(''):'<div class="nodata">Sin registros de seguimiento</div>'}
+    </div>`;
+
+  renderSegCal(calAno, calMes);
+}
+
+function segCalNav(dir){
+  const calKey='seg_cal_mes';
+  let m=parseInt(localStorage.getItem(calKey+'_m')||new Date().getMonth());
+  let y=parseInt(localStorage.getItem(calKey+'_y')||new Date().getFullYear());
+  m+=dir; if(m>11){m=0;y++;} if(m<0){m=11;y--;}
+  localStorage.setItem(calKey+'_m',m); localStorage.setItem(calKey+'_y',y);
+  renderSegCal(y,m);
+}
+
+function renderSegCal(ano,mes){
+  const label=document.getElementById('seg-cal-label');
+  const el=document.getElementById('seg-cal');
+  if(!label||!el) return;
+  const mNames=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  label.textContent=mNames[mes]+' '+ano;
+  const proxMap={};
+  DB.seguimiento.forEach(s=>{ if(s.fecha_proxima){if(!proxMap[s.fecha_proxima])proxMap[s.fecha_proxima]=[];proxMap[s.fecha_proxima].push(s);}});
+  const hoy=new Date().toISOString().slice(0,10);
+  const first=new Date(ano,mes,1).getDay(); // 0=dom
+  const days=new Date(ano,mes+1,0).getDate();
+  const startOffset=(first+6)%7; // lun=0
+  let html=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:10px">`;
+  ['L','M','X','J','V','S','D'].forEach(d=>{ html+=`<div style="text-align:center;font-weight:700;color:var(--mut);padding:2px">${d}</div>`; });
+  for(let i=0;i<startOffset;i++) html+=`<div></div>`;
+  for(let d=1;d<=days;d++){
+    const iso=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const evs=proxMap[iso]||[];
+    const isHoy=iso===hoy;
+    html+=`<div style="text-align:center;padding:3px 1px;border-radius:6px;cursor:${evs.length?'pointer':'default'};background:${isHoy?'var(--acc)':evs.length?'#EEF5FC':'transparent'};color:${isHoy?'#fff':evs.length?'var(--acc)':'var(--txt)'};font-weight:${evs.length||isHoy?'700':'400'}"
+      ${evs.length?`onclick="alert('${iso}:\\n'+[${evs.map(s=>`'${(s.cliente||'').replace(/'/g,"\\'")} — ${(s.notas_proxima||s.proxima||'').replace(/'/g,"\\'")} (${(s.responsable||'').replace(/'/g,"\\'")})'`).join(',')}].join('\\n'))"`:''}>
+      ${d}${evs.length?`<div style="width:5px;height:5px;border-radius:50%;background:${isHoy?'#fff':'var(--acc)'};margin:1px auto 0"></div>`:''}
+    </div>`;
+  }
+  html+=`</div>`;
+  el.innerHTML=html;
+}
+
+function openSeguimientoModal(id){
+  const s=id!=null?DB.seguimiento.find(x=>x._id===id)||{}:{};
+  const trabajadores=DB_TRABAJADORES.map(t=>t.nombre).filter(Boolean).sort();
+  const clientes=DB.clientes.map(c=>c.nombre).sort();
+  document.getElementById('mttl').innerHTML='<i class="ti ti-timeline"></i>'+(id!=null?'Editar':'Nuevo')+' Seguimiento';
+  document.getElementById('mbody').innerHTML=`
+    <input type="hidden" id="m-seg-id" value="${s._id||''}">
+    <div class="fr">
+      <div class="fg"><div class="fl">Cliente *</div>
+        <input class="fi" id="m-seg-cli" list="m-seg-cli-list" value="${s.cliente||''}" placeholder="Empresa">
+        <datalist id="m-seg-cli-list">${clientes.map(n=>`<option value="${n}">`).join('')}</datalist>
+      </div>
+      <div class="fg"><div class="fl">Contacto</div><input class="fi" id="m-seg-contacto" value="${s.contacto||''}" placeholder="Nombre contacto"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><div class="fl">Tipo</div>
+        <select class="fi" id="m-seg-tipo">
+          ${['Llamada','Email','Visita','Reunión','WhatsApp','Otro'].map(t=>`<option ${s.tipo===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="fg"><div class="fl">Fecha</div><input class="fi" id="m-seg-fecha" type="date" value="${s.fecha||new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div class="fg"><div class="fl">Resultado</div><textarea class="fi" id="m-seg-resultado" rows="2" style="resize:vertical" placeholder="Resumen de la acción">${s.resultado||''}</textarea></div>
+    <div style="border-top:1px solid var(--brd);margin-top:10px;padding-top:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--acc);margin-bottom:8px"><i class="ti ti-arrow-right"></i> Próxima acción</div>
+      <div class="fr">
+        <div class="fg"><div class="fl">Fecha próxima acción</div><input class="fi" id="m-seg-proxfecha" type="date" value="${s.fecha_proxima||''}"></div>
+        <div class="fg"><div class="fl">Responsable</div>
+          <select class="fi" id="m-seg-resp">
+            ${trabajadores.map(n=>`<option value="${n}" ${(s.responsable||currentUser?.name)===n?'selected':''}>${n}</option>`).join('')}
+            ${!trabajadores.includes(s.responsable||'')&&s.responsable?`<option selected value="${s.responsable}">${s.responsable}</option>`:''}
+          </select>
+        </div>
+      </div>
+      <div class="fg"><div class="fl">Notas próxima acción</div><input class="fi" id="m-seg-proxnotas" value="${s.notas_proxima||s.proxima||''}" placeholder="Qué hacer en la próxima acción"></div>
+    </div>`;
+  document.getElementById('mfoot').innerHTML=(id!=null?`<button class="btn btn-red btn-sm" onclick="confirmDel('seg',${id},'seguimiento');closeModal()"><i class="ti ti-trash"></i>Eliminar</button><div style="flex:1"></div>`:'')
+    +`<button class="btn btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" onclick="saveSeguimientoModal()">Guardar</button>`;
+  document.getElementById('mbg').classList.add('on');
+}
+
+function checkSeguimientoReminders(){
+  if(!currentUser||!DB.seguimiento) return;
+  const hoy=new Date().toISOString().slice(0,10);
+  const shownKey='seg_rem_'+hoy;
+  const shown=new Set(JSON.parse(localStorage.getItem(shownKey)||'[]'));
+  const pendientes=DB.seguimiento.filter(s=>{
+    if(!s.fecha_proxima||shown.has(String(s._id))) return false;
+    if(s.responsable&&s.responsable!==currentUser.name) return false;
+    const d=new Date(s.fecha_proxima+'T00:00:00');
+    do{ d.setDate(d.getDate()-1); }while(d.getDay()===0||d.getDay()===6);
+    return d.toISOString().slice(0,10)===hoy;
+  });
+  if(!pendientes.length) return;
+  pendientes.forEach(s=>shown.add(String(s._id)));
+  localStorage.setItem(shownKey,JSON.stringify([...shown]));
+  setTimeout(()=>toast(`🔔 Mañana tienes ${pendientes.length} seguimiento${pendientes.length>1?'s':''}: ${pendientes.map(s=>s.cliente).join(', ')}`),800);
+}
+
+async function saveSeguimientoModal(){
+  const cl=document.getElementById('m-seg-cli')?.value?.trim(); if(!cl){toast('⚠ Indica el cliente');return;}
+  const id=parseInt(document.getElementById('m-seg-id')?.value||'');
+  const obj={
+    cliente:cl,
+    contacto:document.getElementById('m-seg-contacto')?.value||'',
+    tipo:document.getElementById('m-seg-tipo')?.value||'Llamada',
+    fecha:document.getElementById('m-seg-fecha')?.value||'',
+    resultado:document.getElementById('m-seg-resultado')?.value||'',
+    fecha_proxima:document.getElementById('m-seg-proxfecha')?.value||'',
+    notas_proxima:document.getElementById('m-seg-proxnotas')?.value||'',
+    proxima:document.getElementById('m-seg-proxnotas')?.value||'', // compat
+    responsable:document.getElementById('m-seg-resp')?.value||currentUser?.name||''
+  };
+  if(id){const s=DB.seguimiento.find(x=>x._id===id);if(s)Object.assign(s,obj);}
+  else{obj._id=nextId(DB.seguimiento);DB.seguimiento.push(obj);}
+  await save(); writeActivity('seguimiento'); toast('✓ Seguimiento guardado'); closeModal(); renderSeguimiento();
 }
 
 // ══════════════════════════════════════════════════════
@@ -2630,9 +2987,8 @@ async function saveModal(){
     renderView(currentView);
     return;
   } else if(currentModal==='seguimiento'){
-    const cl=document.getElementById('m-cliente')?.value?.trim();if(!cl){toast('⚠ Indica el cliente');return;}
-    DB.seguimiento.push({_id:nextId(DB.seguimiento),cliente:cl,contacto:document.getElementById('m-contacto')?.value||'',tipo:document.getElementById('m-tipo')?.value||'Llamada',fecha:document.getElementById('m-fecha')?.value||'',resultado:document.getElementById('m-resultado')?.value||'',proxima:document.getElementById('m-proxima')?.value||'',responsable:document.getElementById('m-resp')?.value||''});
-    toast('✓ Seguimiento guardado');
+    // Handled by saveSeguimientoModal()
+    return;
   }
   // Save → close → render (await ensures data is persisted before re-render)
   await save();
@@ -2656,6 +3012,7 @@ async function doDelete(){
   else if(type==='contacto')DB.directorio=DB.directorio.filter(x=>x._id!==id);
   else if(type==='tarea'){DB.tareas=DB.tareas.filter(x=>x._id!==id);updateBadge();}
   else if(type==='oport'){DB_OPORTUNIDADES=DB_OPORTUNIDADES.filter(x=>x._id!==id);await saveOportunidades();writeActivity('oportunidades');}
+  else if(type==='seg'){DB.seguimiento=DB.seguimiento.filter(x=>x._id!==id);}
   await save(); renderView(currentView); toast('✓ Eliminado');
 }
 
@@ -5035,6 +5392,7 @@ async function bootApp() {
   updateBadge();
   renderDashboard();
   showUserSelect();
+  setTimeout(checkSeguimientoReminders, 2000); // check after login
 
   // Carga el resto en segundo plano sin bloquear la UI
   Promise.all([loadPromos(), loadOportunidades(), loadCompromisos(), loadMarcas()]).then(() => {
