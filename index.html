@@ -874,7 +874,6 @@ function dashRenderComp(){
           <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--acc);font-weight:700">${anoAct}</th>
           <th style="padding:8px 14px;text-align:center;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">Var %</th>
           <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);min-width:160px"></th>
-          <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);width:40px"></th>
         </tr></thead>
         <tbody>
         ${cliRows.map((r,ri)=>{
@@ -901,12 +900,6 @@ function dashRenderComp(){
                   <div style="height:6px;border-radius:3px;background:var(--acc);width:${bAct}px;min-width:${r.act>0?2:0}px"></div>
                 </div>
               </div>
-            </td>
-            <td style="padding:4px 10px;white-space:nowrap">
-              <label title="Subir ventas ${anoAnt} para ${r.nombre}" style="display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border:1px solid var(--brd);border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;color:var(--mut);background:var(--sur)">
-                <i class="ti ti-file-upload" style="font-size:13px"></i>${anoAnt}
-                <input type="file" accept=".xlsx,.xls,.csv" style="display:none" data-cli="${r.nombre.replace(/"/g,'&quot;')}" onchange="handleAnoAntXLCliente(this.dataset.cli,this)">
-              </label>
             </td>
           </tr>`;
         }).join('')}
@@ -1100,21 +1093,13 @@ function handleAnoAntXL(input){
 async function importAnoAntXL(){
   const anoAnt=new Date().getFullYear()-1;
   _anoAntData.forEach(r=>{
-    const c=DB.clientes.find(x=>x.id===r.cliId); if(!c)return;
-    if(!c.ventas)c.ventas=[];
-    if(r.departamento){
-      if(!c.ventas_dep)c.ventas_dep={};
-      if(!c.ventas_dep[r.departamento])c.ventas_dep[r.departamento]={};
-      c.ventas_dep[r.departamento][r.mes]=(c.ventas_dep[r.departamento][r.mes]||0)+r.importe;
-    }
-    const idx=c.ventas.findIndex(v=>v.mes===r.mes&&v.año===r.año);
-    if(idx>=0)c.ventas[idx].importe+=r.importe;
-    else c.ventas.push({mes:r.mes,año:r.año,importe:r.importe,unidades:0,descripcion:''});
+    if(!DB_HISTORICO[r.cliente]) DB_HISTORICO[r.cliente]={};
+    if(!DB_HISTORICO[r.cliente][r.año]) DB_HISTORICO[r.cliente][r.año]={};
+    DB_HISTORICO[r.cliente][r.año][r.mes]=(DB_HISTORICO[r.cliente][r.año][r.mes]||0)+r.importe;
   });
-  await save();
-  toast(`✓ ${_anoAntData.length} registros de ${anoAnt} guardados`);
+  await saveHistorico();
+  toast(`✓ ${_anoAntData.length} registros de ${anoAnt} guardados en histórico`);
   document.getElementById('dash-ant-status').style.display='none';
-  document.getElementById('dash-ant-xl').value='';
   _anoAntData=[];
   dashRenderComp();
 }
@@ -1156,20 +1141,17 @@ function handleAnoAntXLCliente(cliNombre, input){
           parsed.push({mes:mesKey, año, imp, dep});
         });
         if(!parsed.length){toast('⚠ Sin filas válidas. Formato: MES | AÑO | IMPORTE (o MES | IMPORTE)');input.value='';return;}
-        if(!c.ventas)c.ventas=[];
-        parsed.forEach(({mes,año,imp,dep})=>{
-          if(dep){
-            if(!c.ventas_dep)c.ventas_dep={};
-            if(!c.ventas_dep[dep])c.ventas_dep[dep]={};
-            c.ventas_dep[dep][mes]=(c.ventas_dep[dep][mes]||0)+imp;
-          }
-          const idx=c.ventas.findIndex(v=>v.mes===mes&&v.año===año);
-          if(idx>=0)c.ventas[idx].importe+=imp;
-          else c.ventas.push({mes,año,importe:imp,unidades:0,descripcion:''});
+        // Guardar en DB_HISTORICO — no tocar c.ventas
+        if(!DB_HISTORICO[cliNombre]) DB_HISTORICO[cliNombre]={};
+        if(!DB_HISTORICO[cliNombre][anoAnt]) DB_HISTORICO[cliNombre][anoAnt]={};
+        parsed.forEach(({mes,año,imp})=>{
+          const a=año||anoAnt;
+          if(!DB_HISTORICO[cliNombre][a]) DB_HISTORICO[cliNombre][a]={};
+          DB_HISTORICO[cliNombre][a][mes]=(DB_HISTORICO[cliNombre][a][mes]||0)+imp;
         });
-        await save();
+        await saveHistorico();
         input.value='';
-        toast(`✓ ${c.nombre}: ${parsed.length} registros guardados en ${anoAnt}`);
+        toast(`✓ ${c.nombre}: ${parsed.length} registros guardados en histórico ${anoAnt}`);
         dashRenderComp();
       }catch(err){toast('⚠ Error: '+err.message);console.error(err);}
     };
