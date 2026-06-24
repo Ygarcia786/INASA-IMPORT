@@ -637,7 +637,7 @@ function renderHistoricoTable(){
   const now=new Date();
   const anoAct=now.getFullYear();
   // Años con datos + año actual + anterior
-  const anosSet=new Set([anoAct-2, anoAct-1, anoAct]);
+  const anosSet=new Set([anoAct-1, anoAct]);
   DB.clientes.forEach(c=>(c.ventas||[]).forEach(v=>{ if(v.año) anosSet.add(v.año); }));
   const anos=[...anosSet].sort();
 
@@ -668,7 +668,7 @@ function renderHistoricoTable(){
           <td style="padding:6px 10px;white-space:nowrap">
             <div style="display:flex;align-items:center;gap:6px">
               <select id="hist-ano-${ri}" style="padding:3px 6px;border:1px solid var(--brd);border-radius:6px;font-size:11px;background:var(--sur);color:var(--txt)">
-                ${anos.map(a=>`<option value="${a}" ${a===anoAct-1?'selected':''}>${a}</option>`).join('')}
+                ${[...Array(6)].map((_,i)=>anoAct-1+i).map(a=>`<option value="${a}" ${a===anoAct-1?'selected':''}>${a}</option>`).join('')}
               </select>
               <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid var(--brd);border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;color:var(--mut);background:var(--sur);white-space:nowrap">
                 <i class="ti ti-file-upload" style="font-size:12px"></i>Excel
@@ -720,23 +720,34 @@ function handleHistoricoXL(input){
 
         // Detectar formato: buscar fila de cabecera con nombres de mes
         let hdrIdx=-1, mesColMap={};
-        for(let i=0;i<Math.min(5,rows.length);i++){
-          const r=rows[i].map(x=>String(x||'').toLowerCase().trim());
-          const mesesEncontrados=r.filter(x=>MMAP_WIDE[x]);
+        for(let i=0;i<Math.min(10,rows.length);i++){
+          const r=rows[i].map(x=>String(x||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u'));
+          const mesesEncontrados=r.filter(x=>MMAP_WIDE[x]||MMAP_WIDE[x.slice(0,3)]);
           if(mesesEncontrados.length>=3){ hdrIdx=i; break; }
         }
+
+        // Normalizar para detección
+        const normStr=s=>String(s||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
+        const parseNum=v=>{
+          if(typeof v==='number') return v;
+          const s=String(v||'').trim().replace(/\s/g,'');
+          // Formato europeo: 1.234,56 → 1234.56
+          if(/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)) return parseFloat(s.replace(/\./g,'').replace(',','.'));
+          // Formato americano o sin separador de miles
+          return parseFloat(s.replace(/[^0-9.,-]/g,'').replace(',','.')) || 0;
+        };
 
         const parsed=[];
 
         if(hdrIdx>=0){
           // ── FORMATO ANCHO: departamento | ene | feb | … | dic ──
-          const hdrs=rows[hdrIdx].map(x=>String(x||'').toLowerCase().trim());
-          hdrs.forEach((h,i)=>{ if(MMAP_WIDE[h]) mesColMap[i]=MMAP_WIDE[h]; });
+          const hdrs=rows[hdrIdx].map(x=>normStr(x));
+          hdrs.forEach((h,i)=>{ const m=MMAP_WIDE[h]||MMAP_WIDE[h.slice(0,3)]; if(m) mesColMap[i]=m; });
           const dataRows=rows.slice(hdrIdx+1);
           dataRows.forEach(row=>{
             const dep=String(row[0]||'').trim(); if(!dep) return;
             Object.entries(mesColMap).forEach(([ci,mes])=>{
-              const imp=parseImporte(String(row[ci]||''));
+              const imp=parseNum(row[ci]);
               if(imp>0) parsed.push({dep, mes, año:anoSel, imp});
             });
           });
@@ -748,8 +759,8 @@ function handleHistoricoXL(input){
             if(!mesKey) return;
             const v1=String(row[1]||'').replace(/[^0-9]/g,'');
             let año=anoSel, imp=0, dep='';
-            if(v1.length===4&&parseInt(v1)>2000){ año=parseInt(v1); imp=parseImporte(String(row[2]||'')); dep=String(row[4]||'').trim(); }
-            else { imp=parseImporte(String(row[1]||'')); dep=String(row[3]||'').trim(); }
+            if(v1.length===4&&parseInt(v1)>2000){ año=parseInt(v1); imp=parseNum(row[2]); dep=String(row[4]||'').trim(); }
+            else { imp=parseNum(row[1]); dep=String(row[3]||'').trim(); }
             if(imp>0) parsed.push({dep, mes:mesKey, año, imp});
           });
         }
