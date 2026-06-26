@@ -4896,47 +4896,92 @@ async function importarPromosXL() {
   const nuevas = window.__promoImportBuffer__;
   if (!nuevas || !nuevas.length) { toast('⚠ No hay datos para importar'); return; }
 
-  let añadidas = 0, omitidas = 0, duplicadas = [];
-
+  const unicas = [], duplicadas = [];
   nuevas.forEach(p => {
     const tieneEAN = p.ean && String(p.ean).trim();
     let existe;
     if(tieneEAN){
-      // Con EAN: comparar ean+cliente+mes+quincena
       existe = DB_PROMOS.some(x =>
-        nH(x.ean)      === nH(p.ean) &&
-        nH(x.cliente)  === nH(p.cliente) &&
-        nH(x.mes)      === nH(p.mes) &&
-        nH(x.quincena) === nH(p.quincena)
-      );
+        nH(x.ean)===nH(p.ean) && nH(x.cliente)===nH(p.cliente) &&
+        nH(x.mes)===nH(p.mes) && nH(x.quincena)===nH(p.quincena));
     } else {
-      // Sin EAN: comparar cliente+mes+marca+producto+quincena
       existe = DB_PROMOS.some(x =>
-        nH(x.cliente)  === nH(p.cliente) &&
-        nH(x.mes)      === nH(p.mes) &&
-        nH(x.marca)    === nH(p.marca) &&
-        nH(x.producto) === nH(p.producto) &&
-        nH(x.quincena) === nH(p.quincena)
-      );
+        nH(x.cliente)===nH(p.cliente) && nH(x.mes)===nH(p.mes) &&
+        nH(x.marca)===nH(p.marca) && nH(x.producto)===nH(p.producto) &&
+        nH(x.quincena)===nH(p.quincena));
     }
-    if(existe){ omitidas++; duplicadas.push(`${p.cliente} · ${p.mes} · ${p.marca||p.producto||'—'}`); }
-    else { DB_PROMOS.push(p); añadidas++; }
+    if(existe) duplicadas.push(p);
+    else unicas.push(p);
   });
 
-  window.__promoImportBuffer__ = null;
-  await savePromos();
-  closeModal();
-  renderView(currentView);
-
-  if(duplicadas.length){
-    const msg = duplicadas.length<=5
-      ? `\n\nDuplicadas omitidas:\n${duplicadas.join('\n')}`
-      : `\n\n${duplicadas.length} duplicadas omitidas`;
-    toast(`✓ ${añadidas} importadas · ${omitidas} duplicadas omitidas`);
-    if(omitidas>0) setTimeout(()=>alert(`✓ ${añadidas} promociones importadas.\n⚠ ${omitidas} omitidas por ser duplicadas:${msg}`),300);
-  } else {
-    toast(`✓ ${añadidas} promociones importadas`);
+  if(!duplicadas.length){
+    // Sin duplicados — importar directamente
+    unicas.forEach(p=>DB_PROMOS.push(p));
+    window.__promoImportBuffer__=null;
+    await savePromos(); closeModal(); renderView(currentView);
+    toast(`✓ ${unicas.length} promociones importadas`);
+    return;
   }
+
+  // Hay duplicados — mostrar modal de selección
+  window.__promoImportUnicas__  = unicas;
+  window.__promoImportDups__    = duplicadas;
+
+  document.getElementById('mttl').innerHTML='<i class="ti ti-copy"></i>Promociones duplicadas detectadas';
+  document.getElementById('mbody').innerHTML=`
+    <div style="font-size:13px;margin-bottom:12px">
+      <span style="color:var(--grn);font-weight:700">${unicas.length}</span> nuevas se importarán automáticamente.
+      Se encontraron <span style="color:var(--amb);font-weight:700">${duplicadas.length}</span> que ya existen — selecciona cuáles sobreescribir:
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn btn-sm" onclick="document.querySelectorAll('.dup-cb').forEach(c=>c.checked=true)">Seleccionar todas</button>
+      <button class="btn btn-sm" onclick="document.querySelectorAll('.dup-cb').forEach(c=>c.checked=false)">Ninguna</button>
+    </div>
+    <div style="max-height:340px;overflow-y:auto;border:1px solid var(--brd);border-radius:8px">
+      ${duplicadas.map((p,i)=>`
+        <label style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-bottom:0.5px solid var(--brd);cursor:pointer;background:${i%2===0?'transparent':'var(--bg)'}">
+          <input type="checkbox" class="dup-cb" data-idx="${i}" style="margin-top:3px;flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:700">${p.cliente||'—'} · <span style="color:var(--acc)">${p.mes||'—'}${p.quincena?' '+p.quincena:''}</span></div>
+            <div style="font-size:11px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.producto||''} ${p.marca?'· '+p.marca:''} ${p.ean?'· EAN:'+p.ean:''}</div>
+          </div>
+          <span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0">ya existe</span>
+        </label>`).join('')}
+    </div>`;
+  document.getElementById('mfoot').innerHTML=`
+    <button class="btn btn-sm" onclick="closeModal();window.__promoImportBuffer__=null">Cancelar</button>
+    <button class="btn btn-sm" onclick="confirmarImportDups(false)"><i class="ti ti-circle-check"></i>Solo nuevas (${unicas.length})</button>
+    <button class="btn btn-primary btn-sm" onclick="confirmarImportDups(true)"><i class="ti ti-download"></i>Importar selección</button>`;
+  document.getElementById('mbg').classList.add('on');
+}
+
+async function confirmarImportDups(incluirSeleccion){
+  const unicas  = window.__promoImportUnicas__  || [];
+  const dups     = window.__promoImportDups__    || [];
+  let sobreescritas = 0;
+
+  unicas.forEach(p=>DB_PROMOS.push(p));
+
+  if(incluirSeleccion){
+    document.querySelectorAll('.dup-cb:checked').forEach(cb=>{
+      const p=dups[parseInt(cb.dataset.idx)];
+      if(!p) return;
+      // Eliminar la existente y añadir la nueva
+      const tieneEAN=p.ean&&String(p.ean).trim();
+      const idx=DB_PROMOS.findIndex(x=>tieneEAN
+        ?(nH(x.ean)===nH(p.ean)&&nH(x.cliente)===nH(p.cliente)&&nH(x.mes)===nH(p.mes)&&nH(x.quincena)===nH(p.quincena))
+        :(nH(x.cliente)===nH(p.cliente)&&nH(x.mes)===nH(p.mes)&&nH(x.marca)===nH(p.marca)&&nH(x.producto)===nH(p.producto)&&nH(x.quincena)===nH(p.quincena))
+      );
+      if(idx>=0){ DB_PROMOS[idx]=p; sobreescritas++; }
+      else{ DB_PROMOS.push(p); sobreescritas++; }
+    });
+  }
+
+  window.__promoImportBuffer__=null;
+  window.__promoImportUnicas__=null;
+  window.__promoImportDups__=null;
+  await savePromos(); closeModal(); renderView(currentView);
+  toast(`✓ ${unicas.length} nuevas · ${sobreescritas} sobreescritas · ${dups.length-sobreescritas} omitidas`);
 }
 
 // ══════════════════════════════════════════════════════
