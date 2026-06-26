@@ -3980,6 +3980,20 @@ async function saveSobrestock(mes,campo){
 const PYG_KEY='inasa_pyg_v1';
 let _pygData=null; // {headers:[], rows:[][]}
 
+async function eliminarPyG(){
+  if(!_pygData){ toast('No hay datos que eliminar'); return; }
+  if(!confirm('¿Eliminar el registro de Pérdidas y Ganancias?\n\nSe borrarán todos los datos cargados. Esta acción no se puede deshacer.')) return;
+  _pygData=null;
+  try{ await window.storage.delete(PYG_KEY,true); }catch(e){}
+  const body=document.getElementById('pyg-body');
+  if(body) body.innerHTML=`
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--mut);gap:12px">
+      <i class="ti ti-table-import" style="font-size:48px;opacity:.3"></i>
+      <div style="font-size:14px">Carga un Excel para visualizar las pérdidas y ganancias</div>
+    </div>`;
+  toast('✓ Registro eliminado');
+}
+
 async function openPyG(){
   const el=document.getElementById('pyg-overlay');
   if(!el) return;
@@ -4002,58 +4016,129 @@ function handlePyGXL(input){
   const file=input.files[0]; if(!file) return;
   const body=document.getElementById('pyg-body');
   body.innerHTML='<div style="padding:40px;text-align:center;color:var(--mut)">⏳ Leyendo archivo...</div>';
+
   ensureXLSX().then(()=>{
     const reader=new FileReader();
     reader.onload=async function(e){
       try{
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
         const ws=wb.Sheets[wb.SheetNames[0]];
-        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
         if(!rows.length){body.innerHTML='<div style="padding:40px;text-align:center;color:var(--red)">⚠ Archivo vacío</div>';return;}
-        // Primera fila = cabecera
-        const headers=rows[0].map(c=>String(c||'').trim());
-        const dataRows=rows.slice(1).filter(r=>r.some(c=>c!==''&&c!==0));
-        _pygData={headers, rows:dataRows};
+
+        // Detectar fila de cabecera (contiene 'cliente')
+        let hdrIdx=0;
+        for(let i=0;i<Math.min(5,rows.length);i++){
+          if(rows[i].some(c=>String(c||'').toLowerCase().includes('cliente'))){hdrIdx=i;break;}
+        }
+        const hdrs=rows[hdrIdx].map(c=>String(c||'').toLowerCase().trim());
+        const col=k=>{ const i=hdrs.findIndex(h=>h.includes(k)); return i>=0?i:-1; };
+        const cliCol   = col('cliente');
+        const marcaCol = col('marca');
+        const artCol   = col('articulo');
+        const valCol   = hdrs.findIndex(h=>h.includes('recupera')||h.includes('perdida')||h.includes('pérdida'));
+
+        if(cliCol<0||valCol<0){body.innerHTML='<div style="padding:40px;text-align:center;color:var(--red)">⚠ No se encontraron columnas CLIENTE y RECUPERA/PÉRDIDA</div>';return;}
+
+        // Agrupar por cliente
+        const clientes={};
+        rows.slice(hdrIdx+1).forEach(row=>{
+          const cli=String(row[cliCol]||'').trim().toUpperCase();
+          if(!cli||cli==='CLIENTE') return;
+          const rawVal=row[valCol];
+          const val=typeof rawVal==='number'?rawVal:parseFloat(String(rawVal||'').replace(',','.'))||0;
+          if(val===0&&rawVal==='') return;
+          if(!clientes[cli]) clientes[cli]={perdida:0,recuperacion:0,items:[]};
+          if(val<0) clientes[cli].perdida+=val;
+          else clientes[cli].recuperacion+=val;
+          const art=String(row[artCol]||'').trim();
+          const marca=String(row[marcaCol>=0?marcaCol:0]||'').trim();
+          if(art) clientes[cli].items.push({art,marca,val:Math.round(val*100)/100});
+        });
+
+        _pygData={clientes, raw:{headers:rows[hdrIdx], rows:rows.slice(hdrIdx+1)}};
         await window.storage.set(PYG_KEY,JSON.stringify(_pygData),true);
         input.value='';
         renderPyGTable();
-      }catch(err){body.innerHTML=`<div style="padding:40px;text-align:center;color:var(--red)">⚠ Error: ${err.message}</div>`;}
+      }catch(err){body.innerHTML=`<div style="padding:40px;text-align:center;color:var(--red)">⚠ Error: ${err.message}</div>`;console.error(err);}
     };
     reader.readAsArrayBuffer(file);
-  });
+  }).catch(err=>{ body.innerHTML=`<div style="padding:40px;text-align:center;color:var(--red)">⚠ No se pudo cargar el lector Excel.</div>`; });
 }
 
 function renderPyGTable(){
-  const body=document.getElementById('pyg-body');
-  if(!body||!_pygData) return;
-  const {headers,rows}=_pygData;
-  // Detectar columnas numéricas para alinear y colorear
-  const isNum=headers.map((_,ci)=>rows.some(r=>typeof r[ci]==='number'||(/^-?[\d.,]+$/.test(String(r[ci]||'').trim())&&String(r[ci]||'').trim()!=='')));
-  const fmtCell=(v,num)=>{
-    if(!num) return String(v??'');
-    const n=typeof v==='number'?v:parseFloat(String(v||'').replace(/[^0-9.,-]/g,'').replace(',','.'));
-    if(isNaN(n)||String(v||'').trim()==='') return '—';
-    return (n<0?'<span style="color:#A32D2D">':'<span style="color:inherit">')+(n>=0?'':'')+Math.abs(n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+(n<0?'</span>':'</span>');
+  const body=document.getElementById('pyg-body'); if(!body||!_pygData) return;
+  const clientes=_pygData.clientes||{};
+  if(!Object.keys(clientes).length){body.innerHTML='<div style="padding:40px;text-align:center;color:var(--mut)">Sin datos</div>';return;}
+
+  const fmt=v=>{
+    const abs=Math.abs(v);
+    const s=abs>=1000?'€'+abs.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}):'€'+abs.toFixed(2);
+    return v<0?'-'+s:'+'+s;
   };
+
+  let totalPerd=0, totalRec=0;
+  Object.values(clientes).forEach(d=>{ totalPerd+=d.perdida; totalRec+=d.recuperacion; });
+  const totalNeto=totalPerd+totalRec;
+
   body.innerHTML=`
-    <div style="overflow:auto;border:1px solid var(--brd);border-radius:10px">
-    <table style="border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap">
-      <thead style="position:sticky;top:0;z-index:2">
-        <tr style="background:#EEF2F8">
-          ${headers.map((h,i)=>`<th style="padding:8px 14px;text-align:${isNum[i]?'right':'left'};border-bottom:2px solid var(--brd);font-size:11px;font-weight:700;color:var(--acc)">${h||'—'}</th>`).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map((r,ri)=>{
-          const isEmpty=!r[0]&&!r[1];
-          if(isEmpty) return `<tr><td colspan="${headers.length}" style="padding:4px"></td></tr>`;
-          const isBold=String(r[0]||'').trim()===String(r[0]||'').trim().toUpperCase()&&String(r[0]||'').trim().length>2;
-          return`<tr style="background:${ri%2===0?'transparent':'var(--bg)'}${isBold?';border-top:1.5px solid var(--brd)':''}">
-            ${headers.map((_,ci)=>`<td style="padding:${isBold?'9':'6'}px 14px;text-align:${isNum[ci]?'right':'left'};font-weight:${isBold?'700':'400'};border-bottom:0.5px solid var(--brd)">${fmtCell(r[ci],isNum[ci])}</td>`).join('')}
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>`;
+    <!-- KPI TOTAL -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px">
+      <div style="background:#FCEBEB;border:1.5px solid #F5AAAA;border-radius:12px;padding:16px 20px">
+        <div style="font-size:11px;font-weight:700;color:#A32D2D;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-trending-down"></i> Total pérdidas INASA</div>
+        <div style="font-size:28px;font-weight:800;color:#A32D2D">${fmt(totalPerd)}</div>
+      </div>
+      <div style="background:#D1FAE5;border:1.5px solid #6EE7B7;border-radius:12px;padding:16px 20px">
+        <div style="font-size:11px;font-weight:700;color:#065F46;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-trending-up"></i> Total recuperación</div>
+        <div style="font-size:28px;font-weight:800;color:#065F46">${fmt(totalRec)}</div>
+      </div>
+      <div style="background:${totalNeto>=0?'#D1FAE5':'#FCEBEB'};border:1.5px solid ${totalNeto>=0?'#6EE7B7':'#F5AAAA'};border-radius:12px;padding:16px 20px">
+        <div style="font-size:11px;font-weight:700;color:${totalNeto>=0?'#065F46':'#A32D2D'};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-scale"></i> Neto total INASA</div>
+        <div style="font-size:28px;font-weight:800;color:${totalNeto>=0?'#065F46':'#A32D2D'}">${fmt(totalNeto)}</div>
+      </div>
+    </div>
+
+    <!-- TARJETAS POR CLIENTE -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      ${Object.entries(clientes).sort((a,b)=>(a[0]>b[0]?1:-1)).map(([cli,d])=>{
+        const neto=d.perdida+d.recuperacion;
+        return`
+        <div style="background:var(--sur);border:1.5px solid var(--brd);border-radius:12px;overflow:hidden">
+          <!-- Cabecera cliente -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--bg);border-bottom:1px solid var(--brd)">
+            <div style="font-size:16px;font-weight:800;color:var(--txt)">${cli}</div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <span style="font-size:11px;color:var(--mut)">${d.items.length} referencias</span>
+              <span style="font-size:14px;font-weight:800;padding:4px 14px;border-radius:8px;background:${neto>=0?'#D1FAE5':'#FCEBEB'};color:${neto>=0?'#065F46':'#A32D2D'}">${fmt(neto)}</span>
+            </div>
+          </div>
+          <!-- Métricas -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+            <div style="padding:14px 20px;border-right:1px solid var(--brd)">
+              <div style="font-size:10px;font-weight:700;color:#A32D2D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Pérdida INASA</div>
+              <div style="font-size:22px;font-weight:800;color:${d.perdida<0?'#A32D2D':'var(--mut)'}">${d.perdida!==0?fmt(d.perdida):'—'}</div>
+            </div>
+            <div style="padding:14px 20px">
+              <div style="font-size:10px;font-weight:700;color:#065F46;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Recuperación INASA</div>
+              <div style="font-size:22px;font-weight:800;color:${d.recuperacion>0?'#065F46':'var(--mut)'}">${d.recuperacion!==0?fmt(d.recuperacion):'—'}</div>
+            </div>
+          </div>
+          <!-- Top artículos -->
+          ${d.items.length?`
+          <div style="padding:10px 20px 14px;border-top:1px solid var(--brd)">
+            <div style="font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Detalle de artículos</div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              ${d.items.sort((a,b)=>a.val-b.val).map(item=>`
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-radius:6px;background:${item.val<0?'#FFF5F5':'#F0FDF4'}">
+                  <div style="font-size:11px;color:var(--txt)"><strong style="color:var(--mut)">${item.marca}</strong>${item.marca?' · ':''}${item.art}</div>
+                  <div style="font-size:11px;font-weight:700;color:${item.val<0?'#A32D2D':'#065F46'};white-space:nowrap;margin-left:12px">${fmt(item.val)}</div>
+                </div>`).join('')}
+            </div>
+          </div>`:''
+          }
+        </div>`;
+      }).join('')}
+    </div>`;
 }
 
 function toggleSelectAllMarcas(checked){
@@ -4942,16 +5027,22 @@ async function importarPromosXL(){
 
   nuevas.forEach(p => {
     const tieneEAN = p.ean && String(p.ean).trim();
+    // Clave ampliada: incluye fecha_envio y redencion para distinguir
+    // la misma promo en distintas semanas/importes
+    const fenv = String(p.fecha_envio||'').trim();
+    const red  = String(p.redencion||'').trim();
     let idx;
     if(tieneEAN){
       idx = DB_PROMOS.findIndex(x =>
         nH(x.ean)===nH(p.ean) && nH(x.cliente)===nH(p.cliente) &&
-        nH(x.mes)===nH(p.mes) && nH(x.quincena)===nH(p.quincena));
+        nH(x.mes)===nH(p.mes) && nH(x.quincena)===nH(p.quincena) &&
+        String(x.fecha_envio||'').trim()===fenv && String(x.redencion||'').trim()===red);
     } else {
       idx = DB_PROMOS.findIndex(x =>
         nH(x.cliente)===nH(p.cliente) && nH(x.mes)===nH(p.mes) &&
         nH(x.marca)===nH(p.marca) && nH(x.producto)===nH(p.producto) &&
-        nH(x.quincena)===nH(p.quincena));
+        nH(x.quincena)===nH(p.quincena) &&
+        String(x.fecha_envio||'').trim()===fenv && String(x.redencion||'').trim()===red);
     }
     if(idx >= 0){
       DB_PROMOS[idx] = p; // sobreescribir existente
@@ -6734,6 +6825,7 @@ function abrirConfiguracion(){
       <i class="ti ti-file-upload"></i> Cargar Excel
       <input type="file" id="pyg-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handlePyGXL(this)">
     </label>
+    <button onclick="eliminarPyG()" style="padding:6px 14px;border-radius:8px;border:1.5px solid var(--red);background:var(--sur);cursor:pointer;font-size:13px;font-weight:700;color:var(--red)"><i class="ti ti-trash"></i> Eliminar registro</button>
     <button onclick="closePyG()" style="padding:6px 14px;border-radius:8px;border:1px solid var(--brd);background:var(--sur);cursor:pointer;font-size:13px;font-weight:700"><i class="ti ti-x"></i> Cerrar</button>
   </div>
   <div id="pyg-body" style="flex:1;overflow:auto;padding:20px">
