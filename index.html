@@ -891,43 +891,48 @@ function toggleHistorico(){
 function renderHistoricoTable(){
   const el=document.getElementById('dash-hist-table'); if(!el) return;
   const now=new Date();
-  const anoAct=now.getFullYear();
-  // Años con datos + año actual + anterior
-  const anosSet=new Set([anoAct-1, anoAct]);
-  DB.clientes.forEach(c=>(c.ventas||[]).forEach(v=>{ if(v.año) anosSet.add(v.año); }));
-  const anos=[...anosSet].sort();
+  const anoAct=now.getFullYear(), anoAnt=anoAct-1;
 
   const fmt=v=>v>0?'€'+Math.round(v).toLocaleString('es-ES'):'—';
-  const vCliAno=(c,a)=>{
-    if(a===anoAct) return c.ventas.filter(v=>v.año===a).reduce((s,v)=>s+(v.importe||0),0);
-    return histGetAno(c.nombre,a);
-  };
+
+  // Meses con datos en 2026 — base de comparación justa
+  const mesesConActData=MESES.filter(m=>DB.clientes.some(c=>c.ventas.filter(v=>v.año===anoAct&&v.mes===m).reduce((a,v)=>a+(v.importe||0),0)>0));
+  const periodoLabel=mesesConActData.length>1?`${mesesConActData[0]}–${mesesConActData[mesesConActData.length-1]}`:mesesConActData[0]||'—';
+
+  // Total por cliente: 2026 = todos sus meses; 2025 = solo los meses con datos en 2026
+  const vCliAct=c=>c.ventas.filter(v=>v.año===anoAct).reduce((s,v)=>s+(v.importe||0),0);
+  const vCliAnt=c=>mesesConActData.reduce((a,m)=>a+histGet(c.nombre,anoAnt,m),0);
+
+  const totAct=DB.clientes.reduce((a,c)=>a+vCliAct(c),0);
+  const totAnt=DB.clientes.reduce((a,c)=>a+vCliAnt(c),0);
+  const totVar=totAnt>0?((totAct-totAnt)/totAnt*100):null;
 
   el.innerHTML=`
+    <div style="font-size:11px;color:var(--mut);padding:8px 14px 4px"><i class="ti ti-info-circle"></i> Comparando <strong>${periodoLabel} ${anoAnt}</strong> vs <strong>${periodoLabel} ${anoAct}</strong> — mismo período en ambos años</div>
     <div class="tw" style="overflow-x:auto">
     <table style="border-collapse:collapse;width:100%;font-size:12px">
       <thead><tr style="background:var(--bg)">
         <th style="padding:8px 14px;text-align:left;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);position:sticky;left:0;background:var(--bg);z-index:2">Cliente</th>
-        ${anos.map(a=>`<th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:${a===anoAct?'var(--acc)':'var(--mut)'};font-weight:${a===anoAct?'700':'500'}">${a}</th>`).join('')}
-        <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);white-space:nowrap">Subir ventas</th>
+        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">${anoAnt} <span style="font-weight:400;font-size:10px">(${periodoLabel})</span></th>
+        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--acc);font-weight:700">${anoAct}</th>
+        <th style="padding:8px 14px;text-align:center;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">Var %</th>
+        <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);white-space:nowrap">Subir ventas ${anoAnt}</th>
       </tr></thead>
       <tbody>
       ${DB.clientes.map((c,ri)=>{
-        const totales=anos.map(a=>vCliAno(c,a));
+        const vAct=vCliAct(c), vAnt=vCliAnt(c);
+        const delta=vAnt>0?((vAct-vAnt)/vAnt*100):null;
+        const dCol=delta===null?'var(--mut)':delta>=0?'#065F46':'#A32D2D';
+        const dBg =delta===null?'transparent':delta>=0?'#D1FAE5':'#FCEBEB';
         return`<tr style="background:${ri%2===0?'transparent':'var(--bg)'}">
           <td style="padding:7px 14px;font-weight:700;position:sticky;left:0;background:${ri%2===0?'var(--sur,#fff)':'var(--bg)'};z-index:1">${c.nombre}</td>
-          ${totales.map((v,ai)=>{
-            const prev=ai>0?totales[ai-1]:null;
-            const delta=prev&&prev>0?((v-prev)/prev*100):null;
-            return`<td style="padding:7px 14px;text-align:right;color:${v>0?(anos[ai]===anoAct?'var(--acc)':'var(--txt)'):'var(--mut)'}">
-              ${fmt(v)}
-              ${delta!==null&&v>0?`<div style="font-size:9px;font-weight:700;color:${delta>=0?'#065F46':'#A32D2D'}">${delta>=0?'+':''}${delta.toFixed(0)}%</div>`:''}
-            </td>`;
-          }).join('')}
-          <td style="padding:6px 10px;white-space:nowrap">
+          <td style="padding:7px 14px;text-align:right;color:var(--mut)">${fmt(vAnt)}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:${vAct>0?'var(--acc)':'var(--mut)'}">${fmt(vAct)}</td>
+          <td style="padding:7px 14px;text-align:center">${delta===null?'<span style="font-size:11px;color:var(--mut)">—</span>':`<span style="font-size:11px;font-weight:700;background:${dBg};color:${dCol};padding:2px 8px;border-radius:99px">${delta>=0?'+':''}${delta.toFixed(1)}%</span>`}</td>
+          <td style="padding:6px 10px">
             <div style="display:flex;align-items:center;gap:6px">
               <select id="hist-ano-${ri}" style="padding:3px 6px;border:1px solid var(--brd);border-radius:6px;font-size:11px;background:var(--sur);color:var(--txt)">
-                ${[...Array(6)].map((_,i)=>anoAct-1+i).map(a=>`<option value="${a}" ${a===anoAct-1?'selected':''}>${a}</option>`).join('')}
+                ${[...Array(6)].map((_,i)=>anoAct-1+i).map(a=>`<option value="${a}" ${a===anoAnt?'selected':''}>${a}</option>`).join('')}
               </select>
               <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid var(--brd);border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;color:var(--mut);background:var(--sur);white-space:nowrap">
                 <i class="ti ti-file-upload" style="font-size:12px"></i>Excel
@@ -943,16 +948,15 @@ function renderHistoricoTable(){
       }).join('')}
       </tbody>
       <tfoot><tr style="background:var(--bg);border-top:2px solid var(--brd)">
-        <td style="padding:8px 14px;font-weight:700;font-size:11px;position:sticky;left:0;background:var(--bg)">TOTAL</td>
-        ${anos.map(a=>{
-          const tot=DB.clientes.reduce((s,c)=>s+vCliAno(c,a),0);
-          return`<td style="padding:8px 14px;text-align:right;font-weight:700;color:${a===anoAct?'var(--acc)':'var(--txt)'}">${fmt(tot)}</td>`;
-        }).join('')}
+        <td style="padding:8px 14px;font-weight:700;position:sticky;left:0;background:var(--bg)">TOTAL</td>
+        <td style="padding:8px 14px;text-align:right;font-weight:700;color:var(--mut)">${fmt(totAnt)}</td>
+        <td style="padding:8px 14px;text-align:right;font-weight:700;color:var(--acc)">${fmt(totAct)}</td>
+        <td style="padding:8px 14px;text-align:center">${totVar===null?'—':`<span style="font-size:12px;font-weight:700;background:${totVar>=0?'#D1FAE5':'#FCEBEB'};color:${totVar>=0?'#065F46':'#A32D2D'};padding:3px 10px;border-radius:99px">${totVar>=0?'+':''}${totVar.toFixed(1)}%</span>`}</td>
         <td></td>
       </tr></tfoot>
     </table></div>
     <div style="font-size:11px;color:var(--mut);padding:8px 14px">
-      <i class="ti ti-info-circle"></i> Formato Excel: <strong>MES · IMPORTE</strong> (una fila por mes, sin cabecera obligatoria) · Opcional: <strong>AÑO · DEPARTAMENTO</strong>
+      <i class="ti ti-info-circle"></i> Formato Excel: <strong>MES · IMPORTE</strong> · Opcional: <strong>DEPARTAMENTO</strong>
     </div>`;
 }
 
@@ -1075,18 +1079,26 @@ function dashRenderComp(){
   const mode=localStorage.getItem('dash_comp_mode')||'mesmes';
   const now=new Date();
   const anoAct=now.getFullYear(), anoAnt=anoAct-1;
-  const mesActIdx=now.getMonth();
 
   const vMesAno=(mes,ano)=>{
     if(ano===anoAct) return DB.clientes.reduce((a,c)=>a+c.ventas.filter(v=>v.año===ano&&v.mes===mes).reduce((s,v)=>s+(v.importe||0),0),0);
     return DB.clientes.reduce((a,c)=>a+histGet(c.nombre,ano,mes),0);
   };
 
+  // Meses con datos en 2026 — base de toda comparación
+  const mesesConDatos=MESES.map((m,i)=>({m,i,act:vMesAno(m,anoAct),ant:vMesAno(m,anoAnt)})).filter(x=>x.act>0||x.ant>0);
+  const mesesAct=MESES.map((m,i)=>({m,i,v:vMesAno(m,anoAct)})).filter(x=>x.v>0);
+  const ultimoMesActIdx=mesesAct.length>0?mesesAct[mesesAct.length-1].i:-1;
+  const primerMesActIdx=mesesAct.length>0?mesesAct[0].i:0;
+
   // ── MODO CLIENTES ──
+  // Comparar solo los meses con datos en 2026 (mismo período en ambos años)
   if(mode==='clientes'){
+    const mesesParaComp=mesesAct.map(x=>x.m); // solo meses con datos 2026
     const cliRows=DB.clientes.map(c=>{
-      const ant=histGetAno(c.nombre,anoAnt);
       const act=c.ventas.filter(v=>v.año===anoAct).reduce((a,v)=>a+(v.importe||0),0);
+      // 2025: mismos meses que tienen datos en 2026
+      const ant=mesesParaComp.reduce((a,m)=>a+histGet(c.nombre,anoAnt,m),0);
       return {nombre:c.nombre, ant, act};
     }).filter(r=>r.ant>0||r.act>0).sort((a,b)=>b.act-a.act||b.ant-a.ant);
     const maxV=Math.max(...cliRows.flatMap(r=>[r.ant,r.act]),1);
@@ -1094,18 +1106,20 @@ function dashRenderComp(){
     const totAct=cliRows.reduce((a,r)=>a+r.act,0);
     const totD=totAnt>0?((totAct-totAnt)/totAnt*100):0;
     const kpiFmt=v=>v>=1000000?'€'+(v/1000000).toFixed(2)+'M':v>=1000?'€'+Math.round(v/1000)+'k':'€'+Math.round(v).toLocaleString('es-ES');
+    const periodoLabel=mesesParaComp.length>1?`${mesesParaComp[0]}–${mesesParaComp[mesesParaComp.length-1]}`:mesesParaComp[0]||'';
     el.innerHTML=`
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px 16px 0">
+      <div style="font-size:11px;color:var(--mut);padding:10px 16px 0"><i class="ti ti-info-circle"></i> Comparando período <strong>${periodoLabel} ${anoAnt}</strong> vs <strong>${periodoLabel} ${anoAct}</strong> (mismos meses con datos)</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:10px 16px 0">
         <div style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px 14px">
-          <div style="font-size:11px;color:var(--mut);margin-bottom:4px">${anoAnt} — ${cliRows.filter(r=>r.ant>0).length} clientes</div>
+          <div style="font-size:11px;color:var(--mut);margin-bottom:4px">${anoAnt} (${periodoLabel}) — ${cliRows.filter(r=>r.ant>0).length} clientes</div>
           <div style="font-size:18px;font-weight:700;color:var(--mut)">${kpiFmt(totAnt)}</div>
         </div>
         <div style="background:#EEF5FC;border:1px solid #A8C4EF;border-radius:8px;padding:10px 14px">
-          <div style="font-size:11px;color:var(--acc);margin-bottom:4px">${anoAct} — ${cliRows.filter(r=>r.act>0).length} clientes</div>
+          <div style="font-size:11px;color:var(--acc);margin-bottom:4px">${anoAct} (${periodoLabel}) — ${cliRows.filter(r=>r.act>0).length} clientes</div>
           <div style="font-size:18px;font-weight:700;color:var(--acc)">${kpiFmt(totAct)}</div>
         </div>
         <div style="background:${totD>=0?'#D1FAE5':'#FCEBEB'};border:1px solid ${totD>=0?'#6EE7B7':'#FCA5A5'};border-radius:8px;padding:10px 14px">
-          <div style="font-size:11px;color:${totD>=0?'#065F46':'#A32D2D'};margin-bottom:4px"><i class="ti ti-trending-${totD>=0?'up':'down'}"></i> Variación total</div>
+          <div style="font-size:11px;color:${totD>=0?'#065F46':'#A32D2D'};margin-bottom:4px"><i class="ti ti-trending-${totD>=0?'up':'down'}"></i> Variación</div>
           <div style="font-size:18px;font-weight:700;color:${totD>=0?'#065F46':'#A32D2D'}">${totD>=0?'+':''}${totD.toFixed(1)}%</div>
         </div>
       </div>
@@ -1122,28 +1136,18 @@ function dashRenderComp(){
         ${cliRows.map((r,ri)=>{
           const delta=r.ant>0?((r.act-r.ant)/r.ant*100):null;
           const col=delta===null?'var(--mut)':delta>=0?'#065F46':'#A32D2D';
-          const bg =delta===null?'var(--bg)' :delta>=0?'#D1FAE5':'#FCEBEB';
+          const bg=delta===null?'var(--bg)':delta>=0?'#D1FAE5':'#FCEBEB';
           const bAnt=r.ant>0?Math.round(r.ant/maxV*70):0;
           const bAct=r.act>0?Math.round(r.act/maxV*70):0;
           return`<tr style="background:${ri%2===0?'transparent':'var(--bg)'}">
             <td style="padding:7px 14px;font-weight:700">${r.nombre}</td>
             <td style="padding:7px 14px;text-align:right;color:var(--mut)">${r.ant>0?'€'+Math.round(r.ant).toLocaleString('es-ES'):'—'}</td>
             <td style="padding:7px 14px;text-align:right;font-weight:700;color:var(--acc)">${r.act>0?'€'+Math.round(r.act).toLocaleString('es-ES'):'—'}</td>
-            <td style="padding:7px 14px;text-align:center">
-              ${delta===null?'<span style="font-size:11px;color:var(--mut)">nuevo</span>':`<span style="font-size:11px;font-weight:700;background:${bg};color:${col};padding:2px 8px;border-radius:99px">${delta>=0?'+':''}${delta.toFixed(1)}%</span>`}
-            </td>
-            <td style="padding:7px 14px">
-              <div style="display:flex;flex-direction:column;gap:3px">
-                <div style="display:flex;align-items:center;gap:4px">
-                  <div style="width:8px;height:8px;border-radius:50%;background:#C4D9F0;flex-shrink:0"></div>
-                  <div style="height:6px;border-radius:3px;background:#C4D9F0;width:${bAnt}px;min-width:${r.ant>0?2:0}px"></div>
-                </div>
-                <div style="display:flex;align-items:center;gap:4px">
-                  <div style="width:8px;height:8px;border-radius:50%;background:var(--acc);flex-shrink:0"></div>
-                  <div style="height:6px;border-radius:3px;background:var(--acc);width:${bAct}px;min-width:${r.act>0?2:0}px"></div>
-                </div>
-              </div>
-            </td>
+            <td style="padding:7px 14px;text-align:center">${delta===null?'<span style="font-size:11px;color:var(--mut)">nuevo</span>':`<span style="font-size:11px;font-weight:700;background:${bg};color:${col};padding:2px 8px;border-radius:99px">${delta>=0?'+':''}${delta.toFixed(1)}%</span>`}</td>
+            <td style="padding:7px 14px"><div style="display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:4px"><div style="width:8px;height:8px;border-radius:50%;background:#C4D9F0;flex-shrink:0"></div><div style="height:6px;border-radius:3px;background:#C4D9F0;width:${bAnt}px;min-width:${r.ant>0?2:0}px"></div></div>
+              <div style="display:flex;align-items:center;gap:4px"><div style="width:8px;height:8px;border-radius:50%;background:var(--acc);flex-shrink:0"></div><div style="height:6px;border-radius:3px;background:var(--acc);width:${bAct}px;min-width:${r.act>0?2:0}px"></div></div>
+            </div></td>
           </tr>`;
         }).join('')}
         </tbody>
@@ -1158,46 +1162,52 @@ function dashRenderComp(){
     return;
   }
 
-  // Construir filas según modo
-  let filas=[], fromIdx=0, toIdx=11;
+  // ── MODOS: MES A MES / ACUMULADO / RANGO ──
+  let filas=[], fromIdx=primerMesActIdx, toIdx=ultimoMesActIdx;
+
   if(mode==='rango'){
-    fromIdx=parseInt(document.getElementById('dash-range-from')?.value||0);
-    toIdx  =parseInt(document.getElementById('dash-range-to')?.value||(mesActIdx>0?mesActIdx-1:0));
+    fromIdx=parseInt(document.getElementById('dash-range-from')?.value||primerMesActIdx);
+    toIdx  =parseInt(document.getElementById('dash-range-to')?.value||ultimoMesActIdx);
     if(toIdx<fromIdx) toIdx=fromIdx;
+    // Ajustar al rango real con datos
+    while(fromIdx<=toIdx&&vMesAno(MESES[fromIdx],anoAct)===0&&vMesAno(MESES[fromIdx],anoAnt)===0) fromIdx++;
+    while(toIdx>=fromIdx&&vMesAno(MESES[toIdx],anoAct)===0&&vMesAno(MESES[toIdx],anoAnt)===0) toIdx--;
   }
 
   if(mode==='mesmes'){
-    MESES.forEach((m,i)=>{
-      const ant=vMesAno(m,anoAnt), act=vMesAno(m,anoAct);
-      filas.push({label:m, idx:i, ant, act, esFuturo: i>mesActIdx});
-    });
-  } else if(mode==='acumulado'){
-    // Primer y último mes con datos en cualquiera de los dos años
-    let primerMes=11, ultimoMes=0;
-    MESES.forEach((m,i)=>{
-      if(vMesAno(m,anoAnt)>0||vMesAno(m,anoAct)>0){ if(i<primerMes)primerMes=i; if(i>ultimoMes)ultimoMes=i; }
-    });
-    let sumAnt=0, sumAct=0;
-    for(let i=primerMes;i<=ultimoMes;i++){
+    // Solo meses con datos (2026 o 2025) — mismo mes = misma posición
+    for(let i=0;i<=11;i++){
       const m=MESES[i];
-      sumAnt+=vMesAno(m,anoAnt); sumAct+=vMesAno(m,anoAct);
-      filas.push({label:i===primerMes?m:`${MESES[primerMes]}–${m}`, idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
+      const ant=vMesAno(m,anoAnt), act=vMesAno(m,anoAct);
+      if(ant===0&&act===0) continue; // saltar meses sin datos en ningún año
+      filas.push({label:m, idx:i, ant, act, esFuturo:act===0&&i>ultimoMesActIdx});
+    }
+  } else if(mode==='acumulado'){
+    // Acumular de primer a último mes con datos en 2026
+    // 2025: mismos meses que 2026 para comparación justa
+    let sumAnt=0, sumAct=0;
+    for(let i=primerMesActIdx;i<=ultimoMesActIdx;i++){
+      const m=MESES[i];
+      sumAnt+=vMesAno(m,anoAnt); // mismo mes en 2025
+      sumAct+=vMesAno(m,anoAct); // mismo mes en 2026
+      const label=i===primerMesActIdx?m:`${MESES[primerMesActIdx]}–${m}`;
+      filas.push({label, idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
     }
   } else if(mode==='rango'){
-    // Trim rango to only months with data
-    let primerMes=fromIdx, ultimoMes=toIdx;
-    while(primerMes<=toIdx&&vMesAno(MESES[primerMes],anoAnt)===0&&vMesAno(MESES[primerMes],anoAct)===0) primerMes++;
-    while(ultimoMes>=fromIdx&&vMesAno(MESES[ultimoMes],anoAnt)===0&&vMesAno(MESES[ultimoMes],anoAct)===0) ultimoMes--;
     let sumAnt=0, sumAct=0;
-    for(let i=primerMes;i<=Math.max(primerMes,ultimoMes);i++){
-      sumAnt+=vMesAno(MESES[i],anoAnt); sumAct+=vMesAno(MESES[i],anoAct);
+    for(let i=fromIdx;i<=toIdx;i++){
+      sumAnt+=vMesAno(MESES[i],anoAnt); // mismo mes 2025
+      sumAct+=vMesAno(MESES[i],anoAct); // mismo mes 2026
       filas.push({label:MESES[i], idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
     }
   }
 
+  if(!filas.length){
+    el.innerHTML='<div class="nodata">Sin datos para mostrar. Sube ventas para ver la comparativa.</div>';
+    return;
+  }
+
   const maxVal=Math.max(...filas.flatMap(f=>[f.ant,f.act]),1);
-  // Para acumulado y rango el TOTAL es el último valor (ya es el acumulado final)
-  // Para mesmes el TOTAL es la suma real
   const lastFila=filas.filter(f=>!f.esFuturo).slice(-1)[0]||{ant:0,act:0};
   const totAnt=mode==='mesmes'?filas.reduce((a,f)=>a+(f.esFuturo?0:f.ant),0):lastFila.ant;
   const totAct=mode==='mesmes'?filas.reduce((a,f)=>a+(f.esFuturo?0:f.act),0):lastFila.act;
@@ -2108,7 +2118,7 @@ async function saveOportunidades(){
   try{ await window.storage.set(OPORT_KEY,JSON.stringify(DB_OPORTUNIDADES),true); }catch(e){}
 }
 
-let oportCols = {fabricante:true,aportacion:true,cliente:true,comprador_oport:true,comprador:true,surtido:true,notas_surtido:true,estado:true,fecha_cierre:true};
+let oportCols = {fabricante:true,aportacion:true,cliente:true,comprador:true,surtido:true,notas_surtido:true,estado:true,fecha_cierre:true};
 
 function renderOportunidades(){
   const total=DB_OPORTUNIDADES.reduce((a,o)=>a+(parseFloat(o.aportacion)||0),0);
@@ -2124,7 +2134,7 @@ function renderOportunidades(){
     <div id="oport-col-picker" style="display:none;background:var(--sur);border:1.5px solid var(--brd);border-radius:10px;padding:12px 16px;margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Columnas visibles</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente','Cliente'],['comprador_oport','Comprador'],['comprador','Contacto'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']].map(([k,l])=>
+        ${[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente','Cliente'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']].map(([k,l])=>
           `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;font-weight:600">
             <input type="checkbox" ${oportCols[k]?'checked':''} onchange="oportCols['${k}']=this.checked;renderOportTable()">
             ${l}</label>`).join('')}
@@ -2151,7 +2161,7 @@ function renderOportTable(){
   const tbody=document.getElementById('oport-tbody');
   const empty=document.getElementById('oport-empty');
   const sm={Propuesta:'tw-hot',Negociación:'tw-warm',Ganado:'tw-won',Perdido:'tw-lost','Cliente Potencial':'tw-cold',Prospecto:'tw-cold'};
-  const colDefs=[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente','Cliente'],['comprador_oport','Comprador'],['comprador','Contacto'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']];
+  const colDefs=[['fabricante','Fabricante'],['aportacion','Aportación (€)'],['cliente','Cliente'],['comprador','Comprador'],['surtido','Surtido'],['notas_surtido','Notas Surtido'],['estado','Estado'],['fecha_cierre','Fecha cierre']];
   if(thead)thead.innerHTML=colDefs.filter(([k])=>oportCols[k]).map(([,l])=>`<th>${l}</th>`).join('')+'<th></th>';
   if(!tbody)return;
   tbody.innerHTML=DB_OPORTUNIDADES.map(o=>{
@@ -2160,7 +2170,6 @@ function renderOportTable(){
     if(oportCols.fabricante)cells.push(`<td><strong>${o.fabricante||''}</strong></td>`);
     if(oportCols.aportacion)cells.push(`<td style="color:var(--grn);font-weight:700">${o.aportacion?'€'+parseFloat(o.aportacion).toLocaleString():'—'}</td>`);
     if(oportCols.cliente)cells.push(`<td style="font-weight:600">${o.cliente||'—'}</td>`);
-    if(oportCols.comprador_oport)cells.push(`<td><span style="background:#EDE9FE;color:#5B21B6;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:700">${o.comprador_oport||o.cliente_oport||'—'}</span></td>`);
     if(oportCols.comprador)cells.push(`<td style="color:var(--mut)">${o.comprador||'—'}</td>`);
     if(oportCols.surtido)cells.push(`<td style="font-size:11.5px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.surtido||''}">${o.surtido||'—'}</td>`);
     if(oportCols.notas_surtido)cells.push(`<td style="font-size:11px;color:var(--mut);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${o.notas_surtido||''}">${o.notas_surtido||'—'}</td>`);
@@ -2192,7 +2201,7 @@ function openOportunidadModal(id){
       </div>
       <div class="fg"><div class="fl">Comprador</div><input class="fi" id="m-comprador-oport" value="${o.comprador_oport||o.cliente_oport||''}" placeholder="Nombre del comprador"></div>
     </div>
-    <div class="fg"><div class="fl">Contacto</div><input class="fi" id="m-comprador" value="${o.comprador||''}" placeholder="Contacto en el cliente"></div>
+    <div class="fg"><div class="fl">Comprador</div><input class="fi" id="m-comprador" value="${o.comprador||''}" placeholder="Nombre del comprador"></div>
     <div class="fg"><div class="fl">Surtido</div><input class="fi" id="m-surtido" value="${o.surtido||''}" placeholder="Descripción del surtido"></div>
     <div class="fg"><div class="fl">Notas de surtido</div><textarea class="fi" id="m-notas-surtido" rows="3" placeholder="Notas adicionales sobre el surtido">${o.notas_surtido||''}</textarea></div>
     <div class="fr">
@@ -2296,40 +2305,38 @@ function renderCompromisosTable(){
   if(empty)empty.style.display='none';
   if(count)count.textContent=list.length+' compromiso'+(list.length===1?'':'s');
 
-  // Agrupar por departamento
+  // Agrupar por CLIENTE
   const grupos={};
-  const sinDep=[];
+  const sinCli=[];
   list.forEach(c=>{
-    if(c.departamento){ if(!grupos[c.departamento])grupos[c.departamento]=[]; grupos[c.departamento].push(c); }
-    else sinDep.push(c);
+    if(c.cliente){ if(!grupos[c.cliente])grupos[c.cliente]=[]; grupos[c.cliente].push(c); }
+    else sinCli.push(c);
   });
 
-  // Ordenar grupos
-  const deptKeys=Object.keys(grupos).sort();
-  if(sinDep.length) deptKeys.push('__sin__');
-  grupos['__sin__']=sinDep;
+  const cliKeys=Object.keys(grupos).sort();
+  if(sinCli.length) cliKeys.push('__sin__');
+  grupos['__sin__']=sinCli;
 
   const NCOLS=10;
   let html='';
-  deptKeys.forEach(dep=>{
-    const rows=grupos[dep];
-    const depLabel=dep==='__sin__'?'Sin departamento':dep;
-    const groupId='cg_'+dep.replace(/[^a-z0-9]/gi,'_');
-    const totalDep=rows.reduce((a,c)=>a+(c.importe||0),0);
+  cliKeys.forEach(cli=>{
+    const rows=grupos[cli];
+    const cliLabel=cli==='__sin__'?'Sin cliente':cli;
+    const groupId='cg_'+cli.replace(/[^a-z0-9]/gi,'_');
+    const totalCli=rows.reduce((a,c)=>a+(c.importe||0),0);
+    const deps=[...new Set(rows.map(c=>c.departamento).filter(Boolean))].sort();
 
-    // Fila cabecera de grupo (solo si hay más de un grupo)
-    if(deptKeys.length>1){
-      html+=`<tr id="${groupId}_hdr" style="background:#EEF2F8;cursor:pointer" onclick="toggleCompGroup('${groupId}')">
-        <td colspan="${NCOLS}" style="padding:7px 14px;font-weight:700;font-size:12px;color:var(--acc)">
-          <i class="ti ti-chevron-down" id="${groupId}_ico" style="font-size:11px;margin-right:6px;transition:.2s"></i>
-          ${depLabel}
-          <span style="font-size:10px;font-weight:400;color:var(--mut);margin-left:8px">${rows.length} compromiso${rows.length===1?'':'s'}</span>
-          ${totalDep?`<span style="font-size:11px;font-weight:700;color:var(--grn);margin-left:12px">€${Math.round(totalDep).toLocaleString('es-ES')}</span>`:''}
-        </td>
-      </tr>`;
-    }
+    html+=`<tr id="${groupId}_hdr" style="background:#EEF2F8;cursor:pointer" onclick="toggleCompGroup('${groupId}')">
+      <td colspan="${NCOLS}" style="padding:7px 14px;font-weight:700;font-size:12px;color:var(--acc)">
+        <i class="ti ti-chevron-down" id="${groupId}_ico" style="font-size:11px;margin-right:6px;transition:.2s"></i>
+        ${cliLabel}
+        <span style="font-size:10px;font-weight:400;color:var(--mut);margin-left:8px">${rows.length} compromiso${rows.length===1?'':'s'}</span>
+        ${deps.length?`<span style="font-size:10px;color:var(--mut);margin-left:8px">${deps.join(' · ')}</span>`:''}
+        ${totalCli?`<span style="font-size:11px;font-weight:700;color:var(--grn);margin-left:12px">€${Math.round(totalCli).toLocaleString('es-ES')}</span>`:''}
+      </td>
+    </tr>`;
 
-    rows.sort((a,b)=>(a.cliente||'').localeCompare(b.cliente||'','es')).forEach((c,ri)=>{
+    rows.sort((a,b)=>(a.departamento||'').localeCompare(b.departamento||'','es')).forEach((c,ri)=>{
       const ej=c.ejercicio_desde?(c.ejercicio_hasta&&c.ejercicio_hasta!==c.ejercicio_desde?c.ejercicio_desde+'–'+c.ejercicio_hasta:c.ejercicio_desde):'—';
       const hasPdf=!!(c.pdf_base64);
       html+=`<tr class="${groupId}_row" style="background:${ri%2===0?'transparent':'var(--bg)'}">
@@ -3760,11 +3767,13 @@ function renderMarcasTable(list){
       const isPast=i<=lastMesIdx;
       const bg=isPast?'':'background:#FAFBFD;';
       const rColor=vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8';
+      // Solo mostrar N.PREV hasta el último mes con datos reales
+      const showPrev=isPast;
       return`<td style="${bg}border-left:1px solid #D4DCE8;padding:0">
         <div style="display:flex">
-          <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;color:#1558B0;cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','previstos')">${fmtE(vp)}</div>
+          <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;color:${showPrev?'#1558B0':'#D4DCE8'};cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="${showPrev?`editMarcaMesCampo(${m.id},'${mes}','previstos')`:''}">${showPrev?fmtE(vp):''}</div>
           <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${rColor};cursor:pointer;border-right:0.5px solid #E8EDF5" onclick="editMarcaMesCampo(${m.id},'${mes}','ventas')">${fmtE(vr)}</div>
-          <div style="width:26px;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${pctColor(pct)}">${pctFmt(pct)}</div>
+          <div style="width:26px;text-align:right;padding:4px 3px;font-size:10px;font-weight:600;color:${pctColor(pct)}">${showPrev?pctFmt(pct):''}</div>
         </div>
       </td>`;
     }).join('');
@@ -3859,15 +3868,15 @@ function renderMarcasTable(list){
             const isPast=i<=lastMesIdx;
             return`<td style="border-left:1px solid #D4DCE8;padding:0;${isPast?'':'background:#FAFBFD;'}">
               <div style="display:flex">
-                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:#1558B0;border-right:0.5px solid #D4DCE8">${fmtE(vp)}</div>
+                <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${isPast?'#1558B0':'#D4DCE8'};border-right:0.5px solid #D4DCE8">${isPast?fmtE(vp):''}</div>
                 <div style="flex:1;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${vr>0&&vp>0?(vr>=vp?'#0A6E50':'#9B2020'):'#B0B8C8'};border-right:0.5px solid #D4DCE8">${fmtE(vr)}</div>
-                <div style="width:26px;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${pctFmt(pct)}</div>
+                <div style="width:26px;text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:${pctColor(pct)}">${isPast?pctFmt(pct):''}</div>
               </div>
             </td>`;
           }).join('')}
           ${(()=>{
             const totV=sorted.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.ventas||{})[mes]||0),0),0);
-            const totP=sorted.reduce((a,m)=>a+MESES.reduce((s,mes)=>s+((m.previstos||{})[mes]||0),0),0);
+            const totP=sorted.reduce((a,m)=>a+MESES.slice(0,lastMesIdx+1).reduce((s,mes)=>s+((m.previstos||{})[mes]||0),0),0);
             const pct=totP>0&&totV>0?totV/totP*100:null;
             return`<td style="border-left:2px solid #D4DCE8;background:#EEF5FC;padding:0">
               <div style="display:flex">
