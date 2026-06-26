@@ -5908,18 +5908,19 @@ async function bootApp() {
     } catch(e) {}
   }
 
-  // Reset de primera vez
+  // Reset de primera vez — solo si no hay datos en shared storage
   const resetDone = localStorage.getItem('inasa_reset_v3_done');
   if (!resetDone) {
-    const existing = await window.storage.get(KEY).catch(()=>null);
-    if (!existing) {
+    const existing = await window.storage.get(KEY, true).catch(()=>null); // ← shared:true
+    if (!existing || !existing.value) {
+      // Solo inicializar si REALMENTE no hay datos en Supabase
       const freshDB = initDB();
-      await window.storage.set(KEY,        JSON.stringify(freshDB));
-      await window.storage.set(PROMOS_KEY, JSON.stringify([]));
-      await window.storage.set(OPORT_KEY,  JSON.stringify([]));
-      await window.storage.set(COMP_KEY,   JSON.stringify([]));
-      await window.storage.set(TRAB_KEY,   JSON.stringify([]));
-      await window.storage.set(ALIAS_KEY,  JSON.stringify(DEFAULT_ALIASES));
+      await window.storage.set(KEY,        JSON.stringify(freshDB),        true);
+      await window.storage.set(PROMOS_KEY, JSON.stringify([]),              true);
+      await window.storage.set(OPORT_KEY,  JSON.stringify([]),              true);
+      await window.storage.set(COMP_KEY,   JSON.stringify([]),              true);
+      await window.storage.set(TRAB_KEY,   JSON.stringify([]),              true);
+      await window.storage.set(ALIAS_KEY,  JSON.stringify(DEFAULT_ALIASES), true);
     }
     localStorage.setItem('inasa_reset_v3_done', '1');
   }
