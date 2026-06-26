@@ -725,8 +725,7 @@ function updateBadge() {
 //  DASHBOARD
 // ══════════════════════════════════════════════════════
 function renderDashboard() {
-  const allVentas = DB.clientes.flatMap(c => c.ventas);
-  const totalV = allVentas.reduce((a,v) => a+(v.importe||0), 0);
+  const totalV = DB.clientes.flatMap(c=>c.ventas).filter(v=>v.año===anoAct).reduce((a,v)=>a+(v.importe||0),0);
   const dealsA = DB.pipeline.filter(d => !['Ganado','Perdido'].includes(d.estado)).length;
   const tPend  = DB.tareas.filter(t => !t.done).length;
 
@@ -775,7 +774,7 @@ function renderDashboard() {
     </div>
 
     <div class="kgrid" style="grid-template-columns:repeat(3,1fr)">
-      <div class="kcard"><div class="kl"><i class="ti ti-cash"></i> Ventas totales</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div><div class="ks">Todo el histórico</div></div>
+      <div class="kcard"><div class="kl"><i class="ti ti-cash"></i> Ventas totales ${anoAct}</div><div class="kv" style="color:var(--grn)">€${Math.round(totalV).toLocaleString()}</div><div class="ks">Acumulado Ene–${mesAnt}</div></div>
       <div class="kcard" style="border-color:#A8C4EF;background:#EEF5FC"><div class="kl"><i class="ti ti-calendar-month"></i> Ventas ${mesAnt}</div><div class="kv" style="color:var(--acc)">€${Math.round(ventasMesAnt).toLocaleString()}</div><div class="ks">Mes anterior</div></div>
       <div class="kcard"><div class="kl"><i class="ti ti-building-store"></i> Clientes</div><div class="kv">${DB.clientes.length}</div><div class="ks">Registrados</div></div>
     </div>
@@ -814,9 +813,12 @@ function renderDashboard() {
       </div>
       <div style="padding:12px 16px 14px">
       ${(()=>{
+        // Solo los meses con datos en 2026 — misma lógica que el comparativo
+        const mesesAct=MESES.filter(m=>DB.clientes.some(c=>c.ventas.filter(v=>v.año===anoAct&&v.mes===m).reduce((a,v)=>a+(v.importe||0),0)>0));
         const cliComp = DB.clientes.map(c=>{
-          const ant=histGetAno(c.nombre,anoAnt);
           const act=c.ventas.filter(v=>v.año===anoAct).reduce((a,v)=>a+(v.importe||0),0);
+          // 2025: solo los mismos meses que tienen datos en 2026
+          const ant=mesesAct.reduce((a,m)=>a+histGet(c.nombre,anoAnt,m),0);
           return {n:c.nombre, ant, act, tot:act||ant};
         }).filter(c=>c.tot>0).sort((a,b)=>b.tot-a.tot).slice(0,7);
         if(!cliComp.length) return '<div class="nodata">Sin ventas</div>';
