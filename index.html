@@ -783,7 +783,7 @@ function renderDashboard() {
         <div class="ct"><i class="ti ti-table-column"></i>Comparativa ${anoAnt} vs ${anoAct}</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <div style="display:flex;gap:0;border:1px solid var(--brd);border-radius:8px;overflow:hidden">
-          ${[['mesmes','Mes a mes'],['acumulado','Acumulado'],['rango','Rango'],['clientes','Clientes']].map(([k,l])=>`
+          ${[['mesmes','Mes a mes'],['rango','Rango'],['clientes','Clientes']].map(([k,l])=>`
             <button onclick="dashSetMode('${k}')" id="dashbtn-${k}" style="padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--brd)">${l}</button>`).join('')}
         </div>
         </div>
@@ -961,83 +961,96 @@ function renderHistoricoTable(){
 }
 
 function handleHistoricoXL(input){
-  const file=input.files[0]; if(!file)return;
+  const file=input.files[0];
+  if(!file){ console.warn('handleHistoricoXL: no file'); return; }
+
   const cliNombre=input.dataset.cli;
   const rowId=input.dataset.rowid;
-  const anoSel=parseInt(document.getElementById('hist-ano-'+rowId)?.value)||new Date().getFullYear()-1;
+  console.log('handleHistoricoXL → cliente:', cliNombre, '| rowId:', rowId, '| file:', file.name);
+
+  const anoSel=parseInt(document.getElementById('hist-ano-'+rowId)?.value||String(new Date().getFullYear()-1));
   const status=document.getElementById('hist-status-'+rowId);
+  console.log('handleHistoricoXL → año:', anoSel);
+
   const c=DB.clientes.find(x=>x.nombre===cliNombre);
-  if(!c){if(status)status.textContent='⚠ Cliente no encontrado';return;}
-  if(status) status.innerHTML='⏳ Leyendo...';
+  if(!c){
+    console.error('handleHistoricoXL: cliente no encontrado:', cliNombre, '| disponibles:', DB.clientes.map(x=>x.nombre));
+    if(status) status.textContent='⚠ Cliente no encontrado: '+cliNombre;
+    return;
+  }
+  if(status) status.innerHTML='⏳ Cargando XLSX...';
 
   const MMAP_WIDE={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic'};
   const MMAP_TALL={enero:'Ene',febrero:'Feb',marzo:'Mar',abril:'Abr',mayo:'May',junio:'Jun',julio:'Jul',agosto:'Ago',septiembre:'Sep',octubre:'Oct',noviembre:'Nov',diciembre:'Dic',ene:'Ene',feb:'Feb',mar:'Mar',abr:'Abr',may:'May',jun:'Jun',jul:'Jul',ago:'Ago',sep:'Sep',oct:'Oct',nov:'Nov',dic:'Dic',jan:'Ene',apr:'Abr',aug:'Ago',dec:'Dic','1':'Ene','2':'Feb','3':'Mar','4':'Abr','5':'May','6':'Jun','7':'Jul','8':'Ago','9':'Sep','10':'Oct','11':'Nov','12':'Dic','01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep'};
+  const normStr=s=>String(s||'').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const parseNum=v=>{
+    if(typeof v==='number') return v;
+    const s=String(v||'').trim().replace(/\s/g,'');
+    if(!s||s==='-'||s==='') return 0;
+    if(/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)) return parseFloat(s.replace(/\./g,'').replace(',','.'));
+    return parseFloat(s.replace(/[^0-9.,\-]/g,'').replace(',','.')) || 0;
+  };
 
   ensureXLSX().then(()=>{
+    if(status) status.innerHTML='⏳ Leyendo archivo...';
     const reader=new FileReader();
+    reader.onerror=()=>{ console.error('FileReader error'); if(status) status.textContent='⚠ Error leyendo el archivo'; };
     reader.onload=async function(e){
       try{
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
-        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
-        if(!rows.length){if(status)status.textContent='⚠ Archivo vacío';return;}
+        const sheetName=wb.SheetNames[0];
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:''});
+        console.log('handleHistoricoXL → hoja:', sheetName, '| filas:', rows.length, '| primera fila:', rows[0]);
 
-        // Detectar formato: buscar fila de cabecera con nombres de mes
-        let hdrIdx=-1, mesColMap={};
+        if(!rows.length){ if(status) status.textContent='⚠ Archivo vacío'; return; }
+
+        // Detectar formato ancho (cabecera con meses)
+        let hdrIdx=-1; const mesColMap={};
         for(let i=0;i<Math.min(10,rows.length);i++){
-          const r=rows[i].map(x=>String(x||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u'));
-          const mesesEncontrados=r.filter(x=>MMAP_WIDE[x]||MMAP_WIDE[x.slice(0,3)]);
-          if(mesesEncontrados.length>=3){ hdrIdx=i; break; }
+          const r=rows[i].map(x=>normStr(x));
+          const found=r.filter(x=>MMAP_WIDE[x]||MMAP_WIDE[x.slice(0,3)]);
+          if(found.length>=3){ hdrIdx=i; break; }
         }
-
-        // Normalizar para detección
-        const normStr=s=>String(s||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
-        const parseNum=v=>{
-          if(typeof v==='number') return v;
-          const s=String(v||'').trim().replace(/\s/g,'');
-          // Formato europeo: 1.234,56 → 1234.56
-          if(/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s)) return parseFloat(s.replace(/\./g,'').replace(',','.'));
-          // Formato americano o sin separador de miles
-          return parseFloat(s.replace(/[^0-9.,-]/g,'').replace(',','.')) || 0;
-        };
+        console.log('handleHistoricoXL → formato:', hdrIdx>=0?'ANCHO (departamentos × meses)':'ALTO (mes | importe)');
 
         const parsed=[];
 
         if(hdrIdx>=0){
-          // ── FORMATO ANCHO: departamento | ene | feb | … | dic ──
-          const hdrs=rows[hdrIdx].map(x=>normStr(x));
+          // Formato: DEPARTAMENTO | ENE | FEB | ... | DIC
+          const hdrs=rows[hdrIdx].map(normStr);
           hdrs.forEach((h,i)=>{ const m=MMAP_WIDE[h]||MMAP_WIDE[h.slice(0,3)]; if(m) mesColMap[i]=m; });
-          const dataRows=rows.slice(hdrIdx+1);
-          dataRows.forEach(row=>{
+          console.log('handleHistoricoXL → meses detectados:', mesColMap);
+          rows.slice(hdrIdx+1).forEach(row=>{
             const dep=String(row[0]||'').trim(); if(!dep) return;
             Object.entries(mesColMap).forEach(([ci,mes])=>{
               const imp=parseNum(row[ci]);
-              if(imp>0) parsed.push({dep, mes, año:anoSel, imp});
+              if(imp>0) parsed.push({dep,mes,año:anoSel,imp});
             });
           });
         } else {
-          // ── FORMATO ALTO: mes | importe ──
+          // Formato: MES | [AÑO] | IMPORTE
           rows.forEach(row=>{
-            const col0=String(row[0]||'').trim().toLowerCase();
+            const col0=normStr(row[0]);
             const mesKey=MMAP_TALL[col0]||MMAP_TALL[col0.slice(0,3)];
             if(!mesKey) return;
             const v1=String(row[1]||'').replace(/[^0-9]/g,'');
             let año=anoSel, imp=0, dep='';
             if(v1.length===4&&parseInt(v1)>2000){ año=parseInt(v1); imp=parseNum(row[2]); dep=String(row[4]||'').trim(); }
-            else { imp=parseNum(row[1]); dep=String(row[3]||'').trim(); }
-            if(imp>0) parsed.push({dep, mes:mesKey, año, imp});
+            else{ imp=parseNum(row[1]); dep=String(row[3]||'').trim(); }
+            if(imp>0) parsed.push({dep,mes:mesKey,año,imp});
           });
         }
 
+        console.log('handleHistoricoXL → registros parseados:', parsed.length, parsed.slice(0,3));
+
         if(!parsed.length){
-          if(status)status.textContent='⚠ Sin datos válidos';
+          if(status) status.textContent='⚠ Sin datos válidos. Formato: fila de cabecera (dpto|ene|feb…) o columnas (mes|importe)';
           input.value=''; return;
         }
 
-        // Guardar en DB_HISTORICO (independiente de c.ventas)
+        // Guardar en DB_HISTORICO
         if(!DB_HISTORICO[cliNombre]) DB_HISTORICO[cliNombre]={};
-        if(!DB_HISTORICO[cliNombre][anoSel]) DB_HISTORICO[cliNombre][anoSel]={};
-        // Reiniciar el año para este cliente (reemplazar)
-        DB_HISTORICO[cliNombre][anoSel]={};
+        DB_HISTORICO[cliNombre][anoSel]={}; // reemplazar año
 
         const mesTotal={};
         parsed.forEach(({dep,mes,imp})=>{
@@ -1049,21 +1062,26 @@ function handleHistoricoXL(input){
         input.value='';
         const deps=[...new Set(parsed.map(p=>p.dep).filter(Boolean))];
         const total=Object.values(mesTotal).reduce((a,v)=>a+v,0);
-        if(status) status.innerHTML=`<span style="color:#059669">✓ ${anoSel} · ${deps.length} dptos · €${Math.round(total).toLocaleString('es-ES')}</span>`;
+        const resumen=Object.entries(mesTotal).sort((a,b)=>MESES.indexOf(a[0])-MESES.indexOf(b[0])).map(([m,v])=>`${m}:€${Math.round(v).toLocaleString('es-ES')}`).join(' ');
+        console.log('handleHistoricoXL → guardado OK. Total:', total, '| Meses:', resumen);
+        if(status) status.innerHTML=`<span style="color:#059669">✓ ${anoSel} · ${deps.length>0?deps.length+' dptos · ':''}€${Math.round(total).toLocaleString('es-ES')}<br><span style="font-size:9px">${resumen}</span></span>`;
         renderHistoricoTable();
         dashRenderComp();
       }catch(err){
-        if(status)status.textContent='⚠ Error: '+err.message;
-        console.error(err);
+        console.error('handleHistoricoXL ERROR:', err);
+        if(status) status.innerHTML=`<span style="color:#A32D2D">⚠ Error: ${err.message}</span>`;
       }
     };
     reader.readAsArrayBuffer(file);
-  }).catch(err=>{if(status)status.textContent='⚠ '+err.message;});
+  }).catch(err=>{
+    console.error('ensureXLSX failed:', err);
+    if(status) status.innerHTML=`<span style="color:#A32D2D">⚠ No se pudo cargar el lector Excel. Comprueba tu conexión.</span>`;
+  });
 }
 
 function dashSetMode(mode, init){
   localStorage.setItem('dash_comp_mode', mode);
-  ['mesmes','acumulado','rango','clientes'].forEach(k=>{
+  ['mesmes','rango','clientes'].forEach(k=>{
     const b=document.getElementById('dashbtn-'+k);
     if(!b) return;
     b.style.background = k===mode ? 'var(--acc)' : 'var(--sur)';
@@ -5975,26 +5993,33 @@ async function bootApp() {
     } catch(e) {}
   }
 
-  // Reset de primera vez — solo si no hay datos en shared storage
+  // Reset de primera vez — SOLO si Supabase confirma que no hay datos
   const resetDone = localStorage.getItem('inasa_reset_v3_done');
   if (!resetDone) {
-    const existing = await window.storage.get(KEY, true).catch(()=>null); // ← shared:true
-    if (!existing || !existing.value) {
-      // Solo inicializar si REALMENTE no hay datos en Supabase
-      const freshDB = initDB();
-      await window.storage.set(KEY,        JSON.stringify(freshDB),        true);
-      await window.storage.set(PROMOS_KEY, JSON.stringify([]),              true);
-      await window.storage.set(OPORT_KEY,  JSON.stringify([]),              true);
-      await window.storage.set(COMP_KEY,   JSON.stringify([]),              true);
-      await window.storage.set(TRAB_KEY,   JSON.stringify([]),              true);
-      await window.storage.set(ALIAS_KEY,  JSON.stringify(DEFAULT_ALIASES), true);
+    try {
+      const existing = await window.storage.get(KEY, true); // Si falla → exception → skip reset
+      if (!existing || !existing.value) {
+        // Supabase respondió y confirma que no hay datos → inicializar
+        const freshDB = initDB();
+        await window.storage.set(KEY,        JSON.stringify(freshDB),        true);
+        await window.storage.set(PROMOS_KEY, JSON.stringify([]),              true);
+        await window.storage.set(OPORT_KEY,  JSON.stringify([]),              true);
+        await window.storage.set(COMP_KEY,   JSON.stringify([]),              true);
+        await window.storage.set(TRAB_KEY,   JSON.stringify([]),              true);
+        await window.storage.set(ALIAS_KEY,  JSON.stringify(DEFAULT_ALIASES), true);
+      }
+    } catch(e) {
+      console.warn('Reset check omitido (Supabase no respondió):', e.message);
+      // Si Supabase falla NO tocamos nada — los datos están seguros
     }
     localStorage.setItem('inasa_reset_v3_done', '1');
   }
 
-  // Carga datos principales (DB + trabajadores) primero para mostrar UI cuanto antes
+  // Carga datos principales
   try {
+    console.log('🔄 Cargando datos de Supabase...');
     await Promise.all([loadDB(), loadTrabajadores(), loadAliases(), loadHistorico(), loadPrevisto()]);
+    console.log('✓ Datos cargados — Clientes:', DB.clientes?.length, '| Trabajadores:', DB_TRABAJADORES?.length);
   } catch(e) { console.warn('Boot load error:', e); }
   updateBadge();
   try { renderDashboard(); } catch(e) { console.warn('renderDashboard error:', e); }
