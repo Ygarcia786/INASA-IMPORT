@@ -893,31 +893,35 @@ function renderHistoricoTable(){
   const el=document.getElementById('dash-hist-table'); if(!el) return;
   const now=new Date();
   const anoAct=now.getFullYear(), anoAnt=anoAct-1;
-
   const fmt=v=>v>0?'€'+Math.round(v).toLocaleString('es-ES'):'—';
 
-  // Meses con datos en 2026 — base de comparación justa
-  const mesesConActData=MESES.filter(m=>DB.clientes.some(c=>c.ventas.filter(v=>v.año===anoAct&&v.mes===m).reduce((a,v)=>a+(v.importe||0),0)>0));
-  const periodoLabel=mesesConActData.length>1?`${mesesConActData[0]}–${mesesConActData[mesesConActData.length-1]}`:mesesConActData[0]||'—';
-
-  // Total por cliente: 2026 = todos sus meses; 2025 = solo los meses con datos en 2026
+  // 2026: total real de c.ventas
+  // 2025: total de DB_HISTORICO (todos sus meses, sin filtrar)
   const vCliAct=c=>c.ventas.filter(v=>v.año===anoAct).reduce((s,v)=>s+(v.importe||0),0);
-  const vCliAnt=c=>mesesConActData.reduce((a,m)=>a+histGet(c.nombre,anoAnt,m),0);
+  const vCliAnt=c=>histGetAno(c.nombre,anoAnt);
 
   const totAct=DB.clientes.reduce((a,c)=>a+vCliAct(c),0);
   const totAnt=DB.clientes.reduce((a,c)=>a+vCliAnt(c),0);
   const totVar=totAnt>0?((totAct-totAnt)/totAnt*100):null;
 
+  // Meses con datos en 2026 para la etiqueta informativa
+  const mesesAct=MESES.filter(m=>DB.clientes.some(c=>c.ventas.filter(v=>v.año===anoAct&&v.mes===m).reduce((a,v)=>a+(v.importe||0),0)>0));
+  const periodoActLabel=mesesAct.length>1?`${mesesAct[0]}–${mesesAct[mesesAct.length-1]}`:mesesAct[0]||'—';
+
   el.innerHTML=`
-    <div style="font-size:11px;color:var(--mut);padding:8px 14px 4px"><i class="ti ti-info-circle"></i> Comparando <strong>${periodoLabel} ${anoAnt}</strong> vs <strong>${periodoLabel} ${anoAct}</strong> — mismo período en ambos años</div>
+    <div style="font-size:11px;color:var(--mut);padding:8px 14px 4px">
+      <i class="ti ti-info-circle"></i>
+      <strong>${anoAct}</strong>: ${periodoActLabel} &nbsp;·&nbsp;
+      <strong>${anoAnt}</strong>: total histórico subido por cliente
+    </div>
     <div class="tw" style="overflow-x:auto">
     <table style="border-collapse:collapse;width:100%;font-size:12px">
       <thead><tr style="background:var(--bg)">
         <th style="padding:8px 14px;text-align:left;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);position:sticky;left:0;background:var(--bg);z-index:2">Cliente</th>
-        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">${anoAnt} <span style="font-weight:400;font-size:10px">(${periodoLabel})</span></th>
-        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--acc);font-weight:700">${anoAct}</th>
+        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">${anoAnt}</th>
+        <th style="padding:8px 14px;text-align:right;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--acc);font-weight:700">${anoAct} (${periodoActLabel})</th>
         <th style="padding:8px 14px;text-align:center;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut)">Var %</th>
-        <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);white-space:nowrap">Subir ventas ${anoAnt}</th>
+        <th style="padding:8px 14px;border-bottom:1.5px solid var(--brd);font-size:11px;color:var(--mut);white-space:nowrap">Subir ${anoAnt}</th>
       </tr></thead>
       <tbody>
       ${DB.clientes.map((c,ri)=>{
@@ -925,9 +929,12 @@ function renderHistoricoTable(){
         const delta=vAnt>0?((vAct-vAnt)/vAnt*100):null;
         const dCol=delta===null?'var(--mut)':delta>=0?'#065F46':'#A32D2D';
         const dBg =delta===null?'transparent':delta>=0?'#D1FAE5':'#FCEBEB';
+        // Meses con datos en historico para este cliente
+        const mesesHist=Object.keys(DB_HISTORICO[c.nombre]?.[anoAnt]||{}).filter(m=>(DB_HISTORICO[c.nombre][anoAnt][m]||0)>0);
+        const mesesHint=mesesHist.length>0?`<div style="font-size:9px;color:var(--mut)">${mesesHist.join(', ')}</div>`:'';
         return`<tr style="background:${ri%2===0?'transparent':'var(--bg)'}">
           <td style="padding:7px 14px;font-weight:700;position:sticky;left:0;background:${ri%2===0?'var(--sur,#fff)':'var(--bg)'};z-index:1">${c.nombre}</td>
-          <td style="padding:7px 14px;text-align:right;color:var(--mut)">${fmt(vAnt)}</td>
+          <td style="padding:7px 14px;text-align:right;color:var(--mut)">${fmt(vAnt)}${mesesHint}</td>
           <td style="padding:7px 14px;text-align:right;font-weight:700;color:${vAct>0?'var(--acc)':'var(--mut)'}">${fmt(vAct)}</td>
           <td style="padding:7px 14px;text-align:center">${delta===null?'<span style="font-size:11px;color:var(--mut)">—</span>':`<span style="font-size:11px;font-weight:700;background:${dBg};color:${dCol};padding:2px 8px;border-radius:99px">${delta>=0?'+':''}${delta.toFixed(1)}%</span>`}</td>
           <td style="padding:6px 10px">
@@ -957,7 +964,7 @@ function renderHistoricoTable(){
       </tr></tfoot>
     </table></div>
     <div style="font-size:11px;color:var(--mut);padding:8px 14px">
-      <i class="ti ti-info-circle"></i> Formato Excel: <strong>MES · IMPORTE</strong> · Opcional: <strong>DEPARTAMENTO</strong>
+      <i class="ti ti-info-circle"></i> Formato Excel: <strong>DEPARTAMENTO | ENE | FEB | … | DIC</strong> (fila cabecera con meses) o <strong>MES | IMPORTE</strong> (formato columnas)
     </div>`;
 }
 
