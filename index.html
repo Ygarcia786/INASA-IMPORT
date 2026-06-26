@@ -6,6 +6,7 @@
 <title>INASA CRM</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="dns-prefetch" href="https://api.jsonbin.io">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.29.0/dist/tabler-icons.min.css" media="print" onload="this.media='all'">
 <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.29.0/dist/tabler-icons.min.css"></noscript>
 <!-- XLSX loaded on demand -->
@@ -939,7 +940,7 @@ function renderHistoricoTable(){
                 <input type="file" accept=".xlsx,.xls,.csv" style="display:none"
                   data-cli="${c.nombre.replace(/"/g,'&quot;')}"
                   data-rowid="${ri}"
-                  onchange="handleHistoricoXL(this)">
+                  onchange="this.parentElement.querySelector('i').className='ti ti-loader-2';handleHistoricoXL(this)">
               </label>
             </div>
             <div id="hist-status-${ri}" style="font-size:10px;color:var(--mut);margin-top:3px"></div>
@@ -4812,13 +4813,22 @@ let xlsxLoaded = false;
 function ensureXLSX() {
   return new Promise((resolve, reject) => {
     if (typeof XLSX !== 'undefined') { resolve(); return; }
-    if (xlsxLoaded) { const t=setInterval(()=>{if(typeof XLSX!=='undefined'){clearInterval(t);resolve();}},50); return; }
-    xlsxLoaded = true;
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-    s.onload = resolve;
-    s.onerror = reject;
-    document.head.appendChild(s);
+    // Script ya está en el head con defer — esperar a que cargue
+    let tries = 0;
+    const check = setInterval(()=>{
+      if (typeof XLSX !== 'undefined') { clearInterval(check); resolve(); return; }
+      if (++tries > 100) { // 10 segundos máx
+        clearInterval(check);
+        // Fallback: cargar dinámicamente
+        if (xlsxLoaded) { reject(new Error('XLSX no disponible')); return; }
+        xlsxLoaded = true;
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        s.onload = resolve;
+        s.onerror = ()=>reject(new Error('No se pudo cargar el lector Excel. Comprueba tu conexión.'));
+        document.head.appendChild(s);
+      }
+    }, 100);
   });
 }
 
@@ -6015,7 +6025,39 @@ async function bootApp() {
     localStorage.setItem('inasa_reset_v3_done', '1');
   }
 
-  // Carga datos principales
+  // ── RECUPERACIÓN ÚNICA: datos de oportunidades recuperados de JSONBin ──
+  const oportRecoveryDone = localStorage.getItem('inasa_oport_recovery_v1');
+  if (!oportRecoveryDone) {
+    try {
+      const currentOport = await window.storage.get(OPORT_KEY, true);
+      const oportData = currentOport ? JSON.parse(currentOport.value) : [];
+      if (!oportData || oportData.length === 0) {
+        const recovered = [{"fabricante":"CASA LOSITO","aportacion":5000,"cliente_oport":"","comprador_oport":"","cliente":"","comprador":"SHEILA PASTOR","surtido":"SALSA PESTO","notas_surtido":"","estado":"Negociación","fecha_cierre":"2026-07-31","_id":1}];
+        await window.storage.set(OPORT_KEY, JSON.stringify(recovered), true);
+        console.log('✓ Oportunidades recuperadas:', recovered.length);
+      }
+    } catch(e) { console.warn('Oport recovery error:', e); }
+    localStorage.setItem('inasa_oport_recovery_v1', '1');
+  }
+
+  // ── RECUPERACIÓN ÚNICA: compromisos recuperados de JSONBin ──
+  const compRecoveryDone = localStorage.getItem('inasa_comp_recovery_v1');
+  if (!compRecoveryDone) {
+    try {
+      const currentComp = await window.storage.get(COMP_KEY, true);
+      const compData = currentComp ? JSON.parse(currentComp.value) : [];
+      if (!compData || compData.length === 0) {
+        const recovered = [
+          {"cliente":"","departamento":"ECI 207 CONGELADO","tipo_tienda":"","surtido":"VALSOIA HELADOS","observaciones":"","tipo":"ANIVERSARIO","importe":2500,"ejercicio_desde":2026,"ejercicio_hasta":2027,"fecha_realizacion":"","_id":1},
+          {"cliente":"","departamento":"180","tipo_tienda":"","surtido":"rummo","observaciones":"","tipo":"folleto","importe":5000,"ejercicio_desde":2026,"ejercicio_hasta":2027,"fecha_realizacion":"","_id":2}
+        ];
+        await window.storage.set(COMP_KEY, JSON.stringify(recovered), true);
+        console.log('✓ Compromisos recuperados:', recovered.length);
+      }
+    } catch(e) { console.warn('Comp recovery error:', e); }
+    localStorage.setItem('inasa_comp_recovery_v1', '1');
+  }
+
   try {
     console.log('🔄 Cargando datos de Supabase...');
     await Promise.all([loadDB(), loadTrabajadores(), loadAliases(), loadHistorico(), loadPrevisto()]);
