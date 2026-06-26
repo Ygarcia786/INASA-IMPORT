@@ -766,7 +766,8 @@ function renderDashboard() {
       <div class="card">
         <div class="ch" style="flex-wrap:wrap;gap:8px">
           <div class="ct"><i class="ti ti-database"></i>Histórico de ventas por cliente</div>
-          <div style="font-size:11px;color:var(--mut)">Sube el Excel mensual de cada cliente y año para construir la base histórica</div>
+          <div style="font-size:11px;color:var(--mut);flex:1">Sube el Excel mensual de cada cliente y año para construir la base histórica</div>
+          <button class="btn btn-red btn-sm" onclick="eliminarHistorico()"><i class="ti ti-trash"></i>Eliminar histórico</button>
         </div>
         <div id="dash-hist-table"></div>
       </div>
@@ -877,6 +878,17 @@ function renderDashboard() {
     </div>`;
 
   dashSetMode(localStorage.getItem('dash_comp_mode')||'mesmes', true);
+}
+
+async function eliminarHistorico(){
+  const clientes=Object.keys(DB_HISTORICO);
+  if(!clientes.length){ toast('No hay histórico que eliminar'); return; }
+  if(!confirm(`¿Eliminar todo el histórico de ventas?\n\nSe borrarán los datos de ${clientes.length} clientes. Esta acción no se puede deshacer.`)) return;
+  DB_HISTORICO={};
+  await saveHistorico();
+  renderHistoricoTable();
+  dashRenderComp();
+  toast('✓ Histórico de ventas eliminado');
 }
 
 function toggleHistorico(){
@@ -4906,7 +4918,16 @@ function handlePromoXL(ev) {
   }).catch(err => { status.textContent = '⚠ Error cargando lector Excel: ' + err.message; });
 }
 
-async function importarPromosXL() {
+async function eliminarTodasPromos(){
+  if(!DB_PROMOS.length){ toast('No hay promociones que eliminar'); return; }
+  if(!confirm(`¿Eliminar todas las promociones?\n\nSe borrarán ${DB_PROMOS.length} registros. Esta acción no se puede deshacer.`)) return;
+  DB_PROMOS=[];
+  await savePromos();
+  renderPromociones();
+  toast('✓ Todas las promociones eliminadas');
+}
+
+async function importarPromosXL(){
   const nuevas = window.__promoImportBuffer__;
   if (!nuevas || !nuevas.length) { toast('⚠ No hay datos para importar'); return; }
 
@@ -5248,6 +5269,7 @@ function renderPromociones(){
         <button class="btn btn-sm" onclick="openRestaurarPromos()"><i class="ti ti-archive-off"></i>Restaurar</button>
         <button class="btn btn-green btn-sm" onclick="openModal('importPromo')"><i class="ti ti-file-spreadsheet"></i>Importar Excel</button>
         <button class="btn btn-primary btn-sm" onclick="openNuevaPromo()"><i class="ti ti-plus"></i>Nueva promoción</button>
+        <button class="btn btn-red btn-sm" onclick="eliminarTodasPromos()"><i class="ti ti-trash"></i>Eliminar todas</button>
       </div>
     </div>
 
