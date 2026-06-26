@@ -5738,31 +5738,40 @@ function initialsFor(name) {
 
 // ── User selection on boot ─────────────────────────────
 function showUserSelect() {
-  const errBox = document.getElementById('login-error');
-  errBox.style.display = 'none';
-  document.getElementById('login-email').value = '';
-  document.getElementById('login-pwd').value = '';
+  try {
+    const errBox = document.getElementById('login-error');
+    if(errBox) errBox.style.display = 'none';
+    const emailEl = document.getElementById('login-email');
+    const pwdEl   = document.getElementById('login-pwd');
+    if(emailEl) emailEl.value = '';
+    if(pwdEl)   pwdEl.value   = '';
 
-  // Mostrar lista de trabajadores disponibles como ayuda
-  const hint = document.getElementById('login-email-hint');
-  if (hint) {
-    const workers = DB_TRABAJADORES.filter(w => w.nombre);
-    if (workers.length) {
-      hint.innerHTML = `<div style="font-size:11px;color:var(--mut);margin-bottom:6px">Usuarios disponibles (haz clic para rellenar):</div>`
-        + workers.map(w => {
-            const login = (w.email && w.email.trim()) ? w.email.trim() : w.nombre;
-            return `<span onclick="document.getElementById('login-email').value='${login.replace(/'/g,"\\'")}';document.getElementById('login-pwd').focus();"
-              style="display:inline-block;margin:2px;padding:4px 10px;border-radius:6px;background:#EEF5FC;color:var(--acc);font-size:11px;font-weight:600;cursor:pointer;border:1px solid #C3D9F5">${w.nombre}${w.departamento?`<span style="font-weight:400;opacity:.7"> · ${w.departamento}</span>`:''}</span>`;
-          }).join('');
-      hint.style.display = 'block';
-    } else {
-      hint.innerHTML = `<span style="color:#D97706;font-size:11px"><i class="ti ti-alert-circle"></i> Sin trabajadores. <a href="#" onclick="entrarComoAdmin(event)" style="color:var(--acc)">Entrar como administrador</a></span>`;
-      hint.style.display = 'block';
+    const hint = document.getElementById('login-email-hint');
+    if (hint) {
+      const workers = DB_TRABAJADORES.filter(w => w.nombre);
+      if (workers.length) {
+        hint.innerHTML = `<div style="font-size:11px;color:var(--mut);margin-bottom:6px">Usuarios disponibles (haz clic para rellenar):</div>`
+          + workers.map(w => {
+              const login = (w.email && w.email.trim()) ? w.email.trim() : w.nombre;
+              return `<span onclick="document.getElementById('login-email').value='${login.replace(/'/g,"\\'")}';document.getElementById('login-pwd').focus();"
+                style="display:inline-block;margin:2px;padding:4px 10px;border-radius:6px;background:#EEF5FC;color:var(--acc);font-size:11px;font-weight:600;cursor:pointer;border:1px solid #C3D9F5">${w.nombre}${w.departamento?`<span style="font-weight:400;opacity:.7"> · ${w.departamento}</span>`:''}</span>`;
+            }).join('');
+        hint.style.display = 'block';
+      } else {
+        hint.innerHTML = `<span style="color:#D97706;font-size:11px"><i class="ti ti-alert-circle"></i> Sin trabajadores. <a href="#" onclick="entrarComoAdmin(event)" style="color:var(--acc)">Entrar como administrador</a></span>`;
+        hint.style.display = 'block';
+      }
     }
-  }
 
-  document.getElementById('user-select-bg').classList.add('on');
-  setTimeout(()=>document.getElementById('login-email').focus(), 150);
+    const bg = document.getElementById('user-select-bg');
+    if(bg) bg.classList.add('on');
+    setTimeout(()=>document.getElementById('login-email')?.focus(), 150);
+  } catch(e) {
+    console.error('showUserSelect error:', e);
+    // Fallback: mostrar login de emergencia
+    const bg = document.getElementById('user-select-bg');
+    if(bg) bg.classList.add('on');
+  }
 }
 
 function entrarComoAdmin(e) {
@@ -5971,9 +5980,11 @@ async function bootApp() {
   }
 
   // Carga datos principales (DB + trabajadores) primero para mostrar UI cuanto antes
-  await Promise.all([loadDB(), loadTrabajadores(), loadAliases(), loadHistorico(), loadPrevisto()]);
+  try {
+    await Promise.all([loadDB(), loadTrabajadores(), loadAliases(), loadHistorico(), loadPrevisto()]);
+  } catch(e) { console.warn('Boot load error:', e); }
   updateBadge();
-  renderDashboard();
+  try { renderDashboard(); } catch(e) { console.warn('renderDashboard error:', e); }
   showUserSelect();
   setTimeout(checkSeguimientoReminders, 2000); // check after login
 
@@ -5981,7 +5992,7 @@ async function bootApp() {
   Promise.all([loadPromos(), loadOportunidades(), loadCompromisos(), loadMarcas()]).then(() => {
     updatePromoBadge();
     // Refrescar la vista actual si el usuario ya está en dashboard o promos
-    if (currentView === 'dashboard') renderDashboard();
+    if (currentView === 'dashboard') try{ renderDashboard(); }catch(e){ console.warn(e); }
     if (currentView === 'promociones') renderView('promociones');
   }).catch(e => console.warn('Background load error:', e));
 }
