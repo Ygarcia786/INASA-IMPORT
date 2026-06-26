@@ -825,28 +825,28 @@ function renderDashboard() {
         if(!cliComp.length) return '<div class="nodata">Sin ventas</div>';
         const maxV=Math.max(...cliComp.flatMap(c=>[c.ant,c.act]),1);
         const fmt=v=>v>=1000000?'€'+(v/1000000).toFixed(2)+'M':v>=1000?'€'+Math.round(v/1000)+'k':'€'+Math.round(v).toLocaleString('es-ES');
-        return `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">
+        return `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px">
           ${cliComp.map((c,i)=>{
             const delta=c.ant>0?((c.act-c.ant)/c.ant*100):null;
             const dCol=delta===null?'var(--mut)':delta>=0?'#065F46':'#A32D2D';
             const dBg =delta===null?'var(--bg)' :delta>=0?'#D1FAE5':'#FCEBEB';
-            const hAnt=c.ant>0?Math.max(4,Math.round(c.ant/maxV*72)):0;
-            const hAct=c.act>0?Math.max(4,Math.round(c.act/maxV*72)):0;
+            const hAnt=c.ant>0?Math.max(6,Math.round(c.ant/maxV*90)):0;
+            const hAct=c.act>0?Math.max(6,Math.round(c.act/maxV*90)):0;
             const medals=['🥇','🥈','🥉'];
-            return `<div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0">
-              <div style="font-size:10px;font-weight:700;color:var(--mut)">${i<3?medals[i]:'#'+(i+1)}</div>
-              <div style="font-size:10px;font-weight:700;color:var(--txt);text-align:center;word-break:break-word;line-height:1.2;min-height:28px;display:flex;align-items:center;justify-content:center">${c.n}</div>
-              <div style="display:flex;align-items:flex-end;gap:4px;height:76px">
-                <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                  <div style="font-size:8px;color:var(--mut);font-weight:600">${c.ant>0?fmt(c.ant):''}</div>
-                  <div style="width:18px;border-radius:3px 3px 0 0;background:#C4D9F0;height:${hAnt}px;min-height:${c.ant>0?4:0}px"></div>
+            return `<div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0">
+              <div style="font-size:12px;font-weight:700;color:var(--mut)">${i<3?medals[i]:'#'+(i+1)}</div>
+              <div style="font-size:13px;font-weight:800;color:var(--txt);text-align:center;word-break:break-word;line-height:1.2;min-height:32px;display:flex;align-items:center;justify-content:center">${c.n}</div>
+              <div style="display:flex;align-items:flex-end;gap:6px;height:96px">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                  <div style="font-size:10px;color:var(--mut);font-weight:700">${c.ant>0?fmt(c.ant):''}</div>
+                  <div style="width:24px;border-radius:4px 4px 0 0;background:#C4D9F0;height:${hAnt}px;min-height:${c.ant>0?6:0}px"></div>
                 </div>
-                <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-                  <div style="font-size:8px;color:var(--acc);font-weight:700">${c.act>0?fmt(c.act):''}</div>
-                  <div style="width:18px;border-radius:3px 3px 0 0;background:var(--acc);height:${hAct}px;min-height:${c.act>0?4:0}px"></div>
+                <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                  <div style="font-size:10px;color:var(--acc);font-weight:800">${c.act>0?fmt(c.act):''}</div>
+                  <div style="width:24px;border-radius:4px 4px 0 0;background:var(--acc);height:${hAct}px;min-height:${c.act>0?6:0}px"></div>
                 </div>
               </div>
-              <div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:${dBg};color:${dCol}">
+              <div style="font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;background:${dBg};color:${dCol}">
                 ${delta===null?'nuevo':((delta>=0?'+':'')+delta.toFixed(1)+'%')}
               </div>
             </div>`;
@@ -4866,21 +4866,26 @@ function handlePromoXL(ev) {
       };
 
       const nuevas = [];
+      let omitidas = 0;
       rows.forEach((row, i) => {
-        const cliente = gc(row, ['CLIENTE','CLIENT','EMPRESA']);
-        const ean     = gc(row, ['EAN','EAN 13','EAN13','BARCODE']);
-        const producto= gc(row, ['PRODUCTO','PRODUCT','DESCRIPCION','DESCRIPCIÓN']);
-        // skip empty or header-like rows
-        if (!cliente && !ean && !producto) return;
+        const cliente = gc(row, ['CLIENTE','CLIENT','EMPRESA','CADENA']);
+        const ean     = gc(row, ['EAN','EAN 13','EAN13','BARCODE','COD']);
+        const producto= gc(row, ['PRODUCTO','PRODUCT','DESCRIPCION','DESCRIPCIÓN','ARTÍCULO','ARTICULO','REF']);
+        const mes     = gc(row, ['MES','MONTH','MES_PROMO']);
+        const marca   = gc(row, ['MARCA','BRAND']);
+        // Saltar solo filas completamente vacías o filas tipo "TOTAL"
+        const hasAnyData = cliente||ean||producto||mes||marca;
+        if (!hasAnyData) { omitidas++; return; }
+        if (!cliente && /^total/i.test(String(Object.values(row)[0]||''))) { omitidas++; return; }
 
         nuevas.push({
           cliente:            cliente,
-          mes:                gc(row, ['MES','MONTH','MES_PROMO']).toUpperCase(),
-          quincena:           gc(row, ['QUINCENA','QUINC']),
+          mes:                (mes||gc(row, ['PERÍODO','PERIODO'])).toUpperCase(),
+          quincena:           gc(row, ['QUINCENA','QUINC','Q']),
           ean:                ean,
           producto:           producto,
-          marca:              gc(row, ['MARCA','BRAND']),
-          tematica:           gc(row, ['TEMATICA','TEMÁTICA','TEMA','OFERTA']),
+          marca:              marca||gc(row, ['BRAND']),
+          tematica:           gc(row, ['TEMATICA','TEMÁTICA','TEMA','OFERTA','CAMPAÑA']),
           periodo_promo:      gc(row, ['PERIODO_PROMO','PERIODO PROMO','PERÍODO PROMOCIONAL','PERIODO PROMOCIONAL']),
           fecha_envio:        gcRaw(row, ['FECHA_ENVIO','FECHA ENVIO','FECHA ENVÍO']),
           fecha_confirmacion: gcRaw(row, ['FECHA_CONFIRMACION','FECHA CONFIRMACION','FECHA DE CONFIRMACION']),
@@ -4891,13 +4896,15 @@ function handlePromoXL(ev) {
         });
       });
 
+      console.log(`[INASA Import] Leídas: ${nuevas.length} | Omitidas (vacías): ${omitidas}`);
+
       if (!nuevas.length) { status.textContent = '⚠ No se encontraron filas con datos'; return; }
 
       // Store in global so importarPromosXL() can access safely
       window.__promoImportBuffer__ = nuevas;
 
       // Show preview
-      status.innerHTML = `<span style="color:var(--grn);font-weight:700">✓ ${nuevas.length} promociones leídas</span>`;
+      status.innerHTML = `<span style="color:var(--grn);font-weight:700">✓ ${nuevas.length} promociones leídas</span>` + (omitidas>0?` <span style="color:var(--mut);font-size:11px">(${omitidas} filas vacías omitidas)</span>`:'');
       prev.style.display = 'block';
       prev.innerHTML = `
         <div style="max-height:200px;overflow-y:auto;border:1px solid var(--brd);border-radius:6px;padding:8px;font-size:12px">
