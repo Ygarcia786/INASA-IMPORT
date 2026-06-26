@@ -725,16 +725,14 @@ function updateBadge() {
 //  DASHBOARD
 // ══════════════════════════════════════════════════════
 function renderDashboard() {
-  const totalV = DB.clientes.flatMap(c=>c.ventas).filter(v=>v.año===anoAct).reduce((a,v)=>a+(v.importe||0),0);
-  const dealsA = DB.pipeline.filter(d => !['Ganado','Perdido'].includes(d.estado)).length;
-  const tPend  = DB.tareas.filter(t => !t.done).length;
-
   const now = new Date();
   const anoAct = now.getFullYear();
   const anoAnt = anoAct - 1;
   const mesActualIdx = now.getMonth();
   const mesAntIdx = (mesActualIdx + 11) % 12;
   const mesAnt = MESES[mesAntIdx];
+
+  const totalV = DB.clientes.flatMap(c=>c.ventas).filter(v=>v.año===anoAct).reduce((a,v)=>a+(v.importe||0),0);
 
   // ventas por año/mes
   const vPorAnoMes = (ano, mes) => DB.clientes.reduce((a,c)=>
