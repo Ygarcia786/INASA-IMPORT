@@ -784,19 +784,20 @@ function renderDashboard() {
         <div class="ct"><i class="ti ti-table-column"></i>Comparativa ${anoAnt} vs ${anoAct}</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <div style="display:flex;gap:0;border:1px solid var(--brd);border-radius:8px;overflow:hidden">
-          ${[['mesmes','Mes a mes'],['rango','Rango'],['clientes','Clientes']].map(([k,l])=>`
+          ${[['mesmes','Mes a mes'],['clientes','Clientes']].map(([k,l])=>`
             <button onclick="dashSetMode('${k}')" id="dashbtn-${k}" style="padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--brd)">${l}</button>`).join('')}
         </div>
-        </div>
-        <div id="dash-rango-sel" style="display:none;align-items:center;gap:6px">
-          <span style="font-size:12px;color:var(--mut)">Desde</span>
-          <select id="dash-range-from" class="fi" style="padding:4px 8px;width:auto;font-size:12px" onchange="dashRenderComp()">
+        <div id="dash-mes-filtro" style="display:none;align-items:center;gap:6px">
+          <span style="font-size:11px;color:var(--mut)">Desde</span>
+          <select id="dash-mes-from" class="fi" style="padding:4px 8px;width:auto;font-size:12px" onchange="dashRenderComp()">
             ${MESES.map((m,i)=>`<option value="${i}">${m}</option>`).join('')}
           </select>
-          <span style="font-size:12px;color:var(--mut)">hasta</span>
-          <select id="dash-range-to" class="fi" style="padding:4px 8px;width:auto;font-size:12px" onchange="dashRenderComp()">
-            ${MESES.map((m,i)=>`<option value="${i}" ${i===mesAntIdx?'selected':''}>${m}</option>`).join('')}
+          <span style="font-size:11px;color:var(--mut)">hasta</span>
+          <select id="dash-mes-to" class="fi" style="padding:4px 8px;width:auto;font-size:12px" onchange="dashRenderComp()">
+            ${MESES.map((m,i)=>`<option value="${i}" ${i===11?'selected':''}>${m}</option>`).join('')}
           </select>
+          <button class="btn btn-sm" onclick="document.getElementById('dash-mes-from').value=0;document.getElementById('dash-mes-to').value=11;dashRenderComp()" title="Ver todos"><i class="ti ti-x"></i></button>
+        </div>
         </div>
       </div>
       <div id="dash-ant-status" style="display:none;padding:8px 16px;font-size:12px"></div>
@@ -1089,14 +1090,14 @@ function handleHistoricoXL(input){
 
 function dashSetMode(mode, init){
   localStorage.setItem('dash_comp_mode', mode);
-  ['mesmes','rango','clientes'].forEach(k=>{
+  ['mesmes','clientes'].forEach(k=>{
     const b=document.getElementById('dashbtn-'+k);
     if(!b) return;
     b.style.background = k===mode ? 'var(--acc)' : 'var(--sur)';
     b.style.color      = k===mode ? '#fff'       : 'var(--mut)';
   });
-  const rs=document.getElementById('dash-rango-sel');
-  if(rs) rs.style.display = mode==='rango' ? 'flex' : 'none';
+  const mf=document.getElementById('dash-mes-filtro');
+  if(mf) mf.style.display = mode==='mesmes' ? 'flex' : 'none';
   dashRenderComp();
 }
 
@@ -1189,56 +1190,33 @@ function dashRenderComp(){
     return;
   }
 
-  // ── MODOS: MES A MES / ACUMULADO / RANGO ──
-  let filas=[], fromIdx=primerMesActIdx, toIdx=ultimoMesActIdx;
-
-  if(mode==='rango'){
-    fromIdx=parseInt(document.getElementById('dash-range-from')?.value||primerMesActIdx);
-    toIdx  =parseInt(document.getElementById('dash-range-to')?.value||ultimoMesActIdx);
-    if(toIdx<fromIdx) toIdx=fromIdx;
-    // Ajustar al rango real con datos
-    while(fromIdx<=toIdx&&vMesAno(MESES[fromIdx],anoAct)===0&&vMesAno(MESES[fromIdx],anoAnt)===0) fromIdx++;
-    while(toIdx>=fromIdx&&vMesAno(MESES[toIdx],anoAct)===0&&vMesAno(MESES[toIdx],anoAnt)===0) toIdx--;
-  }
-
+  // ── MODO MES A MES con filtro ──
+  let filas=[];
   if(mode==='mesmes'){
-    // Solo meses con datos (2026 o 2025) — mismo mes = misma posición
+    const fromIdx=parseInt(document.getElementById('dash-mes-from')?.value??0);
+    const toIdx=parseInt(document.getElementById('dash-mes-to')?.value??11);
     for(let i=0;i<=11;i++){
+      if(i<fromIdx||i>toIdx) continue;
       const m=MESES[i];
       const ant=vMesAno(m,anoAnt), act=vMesAno(m,anoAct);
-      if(ant===0&&act===0) continue; // saltar meses sin datos en ningún año
+      if(ant===0&&act===0) continue;
       filas.push({label:m, idx:i, ant, act, esFuturo:act===0&&i>ultimoMesActIdx});
-    }
-  } else if(mode==='acumulado'){
-    // Acumular de primer a último mes con datos en 2026
-    // 2025: mismos meses que 2026 para comparación justa
-    let sumAnt=0, sumAct=0;
-    for(let i=primerMesActIdx;i<=ultimoMesActIdx;i++){
-      const m=MESES[i];
-      sumAnt+=vMesAno(m,anoAnt); // mismo mes en 2025
-      sumAct+=vMesAno(m,anoAct); // mismo mes en 2026
-      const label=i===primerMesActIdx?m:`${MESES[primerMesActIdx]}–${m}`;
-      filas.push({label, idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
-    }
-  } else if(mode==='rango'){
-    let sumAnt=0, sumAct=0;
-    for(let i=fromIdx;i<=toIdx;i++){
-      sumAnt+=vMesAno(MESES[i],anoAnt); // mismo mes 2025
-      sumAct+=vMesAno(MESES[i],anoAct); // mismo mes 2026
-      filas.push({label:MESES[i], idx:i, ant:sumAnt, act:sumAct, esFuturo:false});
     }
   }
 
-  if(!filas.length){
-    el.innerHTML='<div class="nodata">Sin datos para mostrar. Sube ventas para ver la comparativa.</div>';
+  if(!filas.length && mode==='mesmes'){
+    el.innerHTML='<div class="nodata">Sin datos para mostrar en el rango seleccionado.</div>';
     return;
   }
 
   const maxVal=Math.max(...filas.flatMap(f=>[f.ant,f.act]),1);
-  const lastFila=filas.filter(f=>!f.esFuturo).slice(-1)[0]||{ant:0,act:0};
-  const totAnt=mode==='mesmes'?filas.reduce((a,f)=>a+(f.esFuturo?0:f.ant),0):lastFila.ant;
-  const totAct=mode==='mesmes'?filas.reduce((a,f)=>a+(f.esFuturo?0:f.act),0):lastFila.act;
+  const totAnt=filas.reduce((a,f)=>a+(f.esFuturo?0:f.ant),0);
+  const totAct=filas.reduce((a,f)=>a+(f.esFuturo?0:f.act),0);
   const totDelta=totAnt>0?((totAct-totAnt)/totAnt*100):0;
+
+  // Etiqueta del rango seleccionado
+  const filasReales=filas.filter(f=>!f.esFuturo);
+  const rangoLabel=filasReales.length>1?`${filasReales[0].label}–${filasReales[filasReales.length-1].label}`:filasReales[0]?.label||'';
 
   // KPIs resumen arriba
   const kpiFmt=v=>v>=1000000?'€'+(v/1000000).toFixed(2)+'M':v>=1000?'€'+Math.round(v/1000)+'k':'€'+Math.round(v).toLocaleString('es-ES');
@@ -1252,11 +1230,11 @@ function dashRenderComp(){
   el.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px 16px 0">
       <div style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px 14px">
-        <div style="font-size:11px;color:var(--mut);margin-bottom:4px"><i class="ti ti-calendar"></i> ${anoAnt}</div>
+        <div style="font-size:11px;color:var(--mut);margin-bottom:4px"><i class="ti ti-calendar"></i> ${anoAnt}${rangoLabel?' ('+rangoLabel+')':''}</div>
         <div style="font-size:18px;font-weight:700;color:var(--mut)">${kpiFmt(totAnt)}</div>
       </div>
       <div style="background:#EEF5FC;border:1px solid #A8C4EF;border-radius:8px;padding:10px 14px">
-        <div style="font-size:11px;color:var(--acc);margin-bottom:4px"><i class="ti ti-calendar"></i> ${anoAct}</div>
+        <div style="font-size:11px;color:var(--acc);margin-bottom:4px"><i class="ti ti-calendar"></i> ${anoAct}${rangoLabel?' ('+rangoLabel+')':''}</div>
         <div style="font-size:18px;font-weight:700;color:var(--acc)">${kpiFmt(totAct)}</div>
       </div>
       <div style="background:${totDelta>=0?'#D1FAE5':'#FCEBEB'};border:1px solid ${totDelta>=0?'#6EE7B7':'#FCA5A5'};border-radius:8px;padding:10px 14px">
@@ -4932,92 +4910,35 @@ async function importarPromosXL() {
   const nuevas = window.__promoImportBuffer__;
   if (!nuevas || !nuevas.length) { toast('⚠ No hay datos para importar'); return; }
 
-  const unicas = [], duplicadas = [];
+  let añadidas = 0, sobreescritas = 0;
+
   nuevas.forEach(p => {
     const tieneEAN = p.ean && String(p.ean).trim();
-    let existe;
+    let idx;
     if(tieneEAN){
-      existe = DB_PROMOS.some(x =>
+      idx = DB_PROMOS.findIndex(x =>
         nH(x.ean)===nH(p.ean) && nH(x.cliente)===nH(p.cliente) &&
         nH(x.mes)===nH(p.mes) && nH(x.quincena)===nH(p.quincena));
     } else {
-      existe = DB_PROMOS.some(x =>
+      idx = DB_PROMOS.findIndex(x =>
         nH(x.cliente)===nH(p.cliente) && nH(x.mes)===nH(p.mes) &&
         nH(x.marca)===nH(p.marca) && nH(x.producto)===nH(p.producto) &&
         nH(x.quincena)===nH(p.quincena));
     }
-    if(existe) duplicadas.push(p);
-    else unicas.push(p);
+    if(idx >= 0){
+      DB_PROMOS[idx] = p; // sobreescribir existente
+      sobreescritas++;
+    } else {
+      DB_PROMOS.push(p); // añadir nueva
+      añadidas++;
+    }
   });
 
-  if(!duplicadas.length){
-    // Sin duplicados — importar directamente
-    unicas.forEach(p=>DB_PROMOS.push(p));
-    window.__promoImportBuffer__=null;
-    await savePromos(); closeModal(); renderView(currentView);
-    toast(`✓ ${unicas.length} promociones importadas`);
-    return;
-  }
-
-  // Hay duplicados — mostrar modal de selección
-  window.__promoImportUnicas__  = unicas;
-  window.__promoImportDups__    = duplicadas;
-
-  document.getElementById('mttl').innerHTML='<i class="ti ti-copy"></i>Promociones duplicadas detectadas';
-  document.getElementById('mbody').innerHTML=`
-    <div style="font-size:13px;margin-bottom:12px">
-      <span style="color:var(--grn);font-weight:700">${unicas.length}</span> nuevas se importarán automáticamente.
-      Se encontraron <span style="color:var(--amb);font-weight:700">${duplicadas.length}</span> que ya existen — selecciona cuáles sobreescribir:
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="btn btn-sm" onclick="document.querySelectorAll('.dup-cb').forEach(c=>c.checked=true)">Seleccionar todas</button>
-      <button class="btn btn-sm" onclick="document.querySelectorAll('.dup-cb').forEach(c=>c.checked=false)">Ninguna</button>
-    </div>
-    <div style="max-height:340px;overflow-y:auto;border:1px solid var(--brd);border-radius:8px">
-      ${duplicadas.map((p,i)=>`
-        <label style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-bottom:0.5px solid var(--brd);cursor:pointer;background:${i%2===0?'transparent':'var(--bg)'}">
-          <input type="checkbox" class="dup-cb" data-idx="${i}" style="margin-top:3px;flex-shrink:0">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:12px;font-weight:700">${p.cliente||'—'} · <span style="color:var(--acc)">${p.mes||'—'}${p.quincena?' '+p.quincena:''}</span></div>
-            <div style="font-size:11px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.producto||''} ${p.marca?'· '+p.marca:''} ${p.ean?'· EAN:'+p.ean:''}</div>
-          </div>
-          <span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0">ya existe</span>
-        </label>`).join('')}
-    </div>`;
-  document.getElementById('mfoot').innerHTML=`
-    <button class="btn btn-sm" onclick="closeModal();window.__promoImportBuffer__=null">Cancelar</button>
-    <button class="btn btn-sm" onclick="confirmarImportDups(false)"><i class="ti ti-circle-check"></i>Solo nuevas (${unicas.length})</button>
-    <button class="btn btn-primary btn-sm" onclick="confirmarImportDups(true)"><i class="ti ti-download"></i>Importar selección</button>`;
-  document.getElementById('mbg').classList.add('on');
-}
-
-async function confirmarImportDups(incluirSeleccion){
-  const unicas  = window.__promoImportUnicas__  || [];
-  const dups     = window.__promoImportDups__    || [];
-  let sobreescritas = 0;
-
-  unicas.forEach(p=>DB_PROMOS.push(p));
-
-  if(incluirSeleccion){
-    document.querySelectorAll('.dup-cb:checked').forEach(cb=>{
-      const p=dups[parseInt(cb.dataset.idx)];
-      if(!p) return;
-      // Eliminar la existente y añadir la nueva
-      const tieneEAN=p.ean&&String(p.ean).trim();
-      const idx=DB_PROMOS.findIndex(x=>tieneEAN
-        ?(nH(x.ean)===nH(p.ean)&&nH(x.cliente)===nH(p.cliente)&&nH(x.mes)===nH(p.mes)&&nH(x.quincena)===nH(p.quincena))
-        :(nH(x.cliente)===nH(p.cliente)&&nH(x.mes)===nH(p.mes)&&nH(x.marca)===nH(p.marca)&&nH(x.producto)===nH(p.producto)&&nH(x.quincena)===nH(p.quincena))
-      );
-      if(idx>=0){ DB_PROMOS[idx]=p; sobreescritas++; }
-      else{ DB_PROMOS.push(p); sobreescritas++; }
-    });
-  }
-
-  window.__promoImportBuffer__=null;
-  window.__promoImportUnicas__=null;
-  window.__promoImportDups__=null;
-  await savePromos(); closeModal(); renderView(currentView);
-  toast(`✓ ${unicas.length} nuevas · ${sobreescritas} sobreescritas · ${dups.length-sobreescritas} omitidas`);
+  window.__promoImportBuffer__ = null;
+  await savePromos();
+  closeModal();
+  renderView(currentView);
+  toast(`✓ ${añadidas} nuevas · ${sobreescritas} actualizadas`);
 }
 
 // ══════════════════════════════════════════════════════
