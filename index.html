@@ -1079,6 +1079,7 @@ function dashRenderComp(){
   const mode=localStorage.getItem('dash_comp_mode')||'mesmes';
   const now=new Date();
   const anoAct=now.getFullYear(), anoAnt=anoAct-1;
+  const mesActIdx=now.getMonth(); // 0=Ene … 11=Dic
 
   const vMesAno=(mes,ano)=>{
     if(ano===anoAct) return DB.clientes.reduce((a,c)=>a+c.ventas.filter(v=>v.año===ano&&v.mes===mes).reduce((s,v)=>s+(v.importe||0),0),0);
@@ -4994,39 +4995,51 @@ let DB_PROMOS = JSON.parse(JSON.stringify(PROMOS_DATA)); // populated in bootApp
 async function savePromos(){
   try {
     const json = JSON.stringify(DB_PROMOS);
-    const CHUNK = 70000; // ~70kb per chunk, safely under 100kb jsonbin limit
+    const CHUNK = 50000; // más pequeño para mayor fiabilidad en Supabase
     const chunks = [];
     for(let i=0; i<json.length; i+=CHUNK) chunks.push(json.slice(i,i+CHUNK));
 
-    // Save each chunk and a manifest
-    await Promise.all(chunks.map((c,i) =>
-      window.storage.set(PROMOS_KEY+'_chunk_'+i, JSON.stringify({d:c,t:Date.now()}), true)
-    ));
-    await window.storage.set(PROMOS_KEY+'_manifest', JSON.stringify({chunks:chunks.length,t:Date.now()}), true);
+    // Guardar secuencialmente para evitar problemas de concurrencia
+    for(let i=0; i<chunks.length; i++){
+      await window.storage.set(PROMOS_KEY+'_chunk_'+i, JSON.stringify({d:chunks[i],t:Date.now()}), true);
+    }
+    await window.storage.set(PROMOS_KEY+'_manifest', JSON.stringify({chunks:chunks.length,total:DB_PROMOS.length,t:Date.now()}), true);
 
-    // Clean up any old extra chunks from previous saves
+    // Limpiar chunks sobrantes de guardados anteriores
     for(let i=chunks.length; i<20; i++){
       try{ await window.storage.delete(PROMOS_KEY+'_chunk_'+i, true); }catch(e){ break; }
     }
-  } catch(e){ console.error('savePromos error', e); }
+    console.log(`✓ Promos guardadas: ${DB_PROMOS.length} en ${chunks.length} chunks`);
+  } catch(e){ console.error('savePromos error', e); toast('⚠ Error guardando promociones: '+e.message); }
 }
 
 async function loadPromos(){
   try {
     const manifest = await window.storage.get(PROMOS_KEY+'_manifest', true);
     if(manifest){
-      const {chunks} = JSON.parse(manifest.value);
-      const parts = await Promise.all(
-        Array.from({length:chunks},(_,i) => window.storage.get(PROMOS_KEY+'_chunk_'+i, true))
-      );
-      const json = parts.map(p => JSON.parse(p.value).d).join('');
+      const {chunks, total} = JSON.parse(manifest.value);
+      const parts = [];
+      // Cargar chunks secuencialmente para mayor fiabilidad
+      for(let i=0; i<chunks; i++){
+        const p = await window.storage.get(PROMOS_KEY+'_chunk_'+i, true);
+        if(!p) throw new Error(`Chunk ${i} no encontrado`);
+        parts.push(JSON.parse(p.value).d);
+      }
+      const json = parts.join('');
       DB_PROMOS = JSON.parse(json);
+      if(total && DB_PROMOS.length !== total){
+        console.warn(`⚠ Promos: esperadas ${total}, cargadas ${DB_PROMOS.length}`);
+      }
+      console.log(`✓ Promos cargadas: ${DB_PROMOS.length}`);
       return;
     }
-    // Fallback: try old single-key format
+    // Fallback: formato antiguo clave única
     const r = await window.storage.get(PROMOS_KEY, true);
     if(r) DB_PROMOS = JSON.parse(r.value);
-  } catch(e){ DB_PROMOS = JSON.parse(JSON.stringify(PROMOS_DATA)); }
+  } catch(e){
+    console.error('loadPromos error', e);
+    DB_PROMOS = JSON.parse(JSON.stringify(PROMOS_DATA));
+  }
 }
 
 // Patch badge on boot
