@@ -3359,6 +3359,9 @@ const MFORMS = {
     <div class="fg"><div class="fl">Responsable</div><input class="fi" id="m-resp" placeholder="Nombre"></div></div>`};},
   import: () => { currentModal='import'; return {t:'<i class="ti ti-file-spreadsheet"></i>Importar Contactos', b:`
     <p style="font-size:12px;color:var(--mut);margin-bottom:10px">Columnas: <strong>CLIENTE · DEPARTAMENTO · PUESTO · NOMBRE · EMAIL · TELEFONO · DIRECCION · OBS</strong></p>
+    <div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#991B1B">
+      <i class="ti ti-alert-triangle"></i> <strong>Atención:</strong> al importar, este Excel <strong>sustituirá por completo</strong> el directorio actual (se eliminarán todos los contactos existentes y se guardarán solo los del archivo).
+    </div>
     <div class="uzone" onclick="document.getElementById('xl-file').click()">
       <i class="ti ti-upload" style="font-size:28px;color:#1558B0;display:block;margin-bottom:7px"></i>
       <div style="font-size:13px;font-weight:700;margin-bottom:3px">Haz clic o arrastra tu Excel</div>
@@ -3573,7 +3576,7 @@ function handleXL(ev){
           <div style="font-weight:700;color:var(--grn);margin-bottom:6px">✓ ${xlData.length} contactos detectados</div>
           ${xlData.slice(0,5).map(c=>`<div style="color:var(--mut)">· ${c.nombre||'—'} — ${c.cliente||'—'} ${c.email?'<'+c.email+'>':''}</div>`).join('')}
           ${xlData.length>5?`<div style="color:var(--mut)">...y ${xlData.length-5} más</div>`:''}
-          <button class="btn btn-green btn-sm" style="margin-top:10px;width:100%;justify-content:center" onclick="importXL()"><i class="ti ti-download"></i>Guardar ${xlData.length} contactos</button>
+          <button class="btn btn-red btn-sm" style="margin-top:10px;width:100%;justify-content:center;background:var(--red);border-color:var(--red);color:#fff" onclick="importXL()"><i class="ti ti-replace"></i>Sustituir directorio por estos ${xlData.length} contactos</button>
         </div>`;
       }catch(err){prev.innerHTML='<div style="color:var(--red)">⚠ Error: '+err.message+'</div>';}
     };
@@ -3581,13 +3584,12 @@ function handleXL(ev){
   }).catch(err=>{prev.innerHTML='<div style="color:var(--red)">⚠ Error cargando lector Excel: '+err.message+'</div>';});
 }
 async function importXL(){
-  let nextID=nextId(DB.directorio);
+  if(!confirm(`¿Seguro que quieres SUSTITUIR el directorio completo?\n\nSe eliminarán los ${DB.directorio.length} contactos actuales y se guardarán los ${xlData.length} contactos de este Excel en su lugar.\n\nEsta acción no se puede deshacer.`)) return;
+  let nextID=1;
   xlData.forEach(c=>{c._id=nextID++;});
-  const existingEmails=new Set(DB.directorio.map(c=>c.email).filter(Boolean));
-  const newOnes=xlData.filter(c=>!c.email||!existingEmails.has(c.email));
-  DB.directorio.push(...newOnes);
+  DB.directorio=xlData.slice();
   await save(); closeModal();
-  toast('✓ '+newOnes.length+' contactos guardados en almacenamiento local');
+  toast('✓ Directorio sustituido: '+xlData.length+' contactos guardados en Supabase');
   if(currentView==='directorio') renderDirectorio();
 }
 
